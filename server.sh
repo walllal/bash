@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # ==============================================================
-#  Linux Server Initialization Script (Ultimate Edition)
+#  Linux Server Initialization Script (Ultimate Edition v2)
 #  Author: Customized based on user request
 #  System: Debian / Ubuntu
 # ==============================================================
@@ -157,18 +157,54 @@ function task_firewall() {
 function task_sys_config() {
     header "系统基础设置"
     
-    # 时区
-    timedatectl set-timezone Asia/Shanghai
-    success "时区已设置为 Asia/Shanghai"
+    # --- 时区设置 ---
+    echo -e "请选择服务器时区："
+    echo -e "  ${GREEN}1.${PLAIN} UTC (通用协调时间 - 推荐)"
+    echo -e "  ${GREEN}2.${PLAIN} Asia/Shanghai (中国标准时间/北京时间)"
+    echo -e "  ${GREEN}3.${PLAIN} Asia/Hong_Kong (香港时间)"
+    echo -e "  ${GREEN}4.${PLAIN} Asia/Tokyo (日本时间)"
+    echo -e "  ${GREEN}5.${PLAIN} America/Los_Angeles (美西/洛杉矶)"
+    echo -e "  ${GREEN}6.${PLAIN} America/New_York (美东/纽约)"
+    echo -e "  ${GREEN}7.${PLAIN} Europe/London (英国/伦敦)"
+    echo -e "  ${GREEN}8.${PLAIN} Europe/Berlin (德国/柏林/法兰克福)"
+    echo -e "  ${GREEN}9.${PLAIN} 手动输入 (例如 Australia/Sydney)"
     
-    # BBR
+    read -p "请输入选项 [1-9] (默认 2): " tz_opt
+    
+    # 默认值
+    [[ -z "$tz_opt" ]] && tz_opt="2"
+    
+    case "$tz_opt" in
+        1) MY_TZ="UTC" ;;
+        2) MY_TZ="Asia/Shanghai" ;;
+        3) MY_TZ="Asia/Hong_Kong" ;;
+        4) MY_TZ="Asia/Tokyo" ;;
+        5) MY_TZ="America/Los_Angeles" ;;
+        6) MY_TZ="America/New_York" ;;
+        7) MY_TZ="Europe/London" ;;
+        8) MY_TZ="Europe/Berlin" ;;
+        9) read -p "请输入时区标识 (如 Asia/Singapore): " manual_tz
+           MY_TZ="$manual_tz" ;;
+        *) warn "无效选择，默认使用 Asia/Shanghai"; MY_TZ="Asia/Shanghai" ;;
+    esac
+
+    if [[ -n "$MY_TZ" ]]; then
+        timedatectl set-timezone "$MY_TZ"
+        success "时区已设置为: $MY_TZ"
+        info "当前系统时间: $(date)"
+    fi
+    
+    print_line
+    
+    # --- BBR 设置 ---
+    info "正在检查 TCP BBR 设置..."
     if ! grep -q "net.ipv4.tcp_congestion_control=bbr" /etc/sysctl.conf; then
         echo "net.core.default_qdisc=fq" >> /etc/sysctl.conf
         echo "net.ipv4.tcp_congestion_control=bbr" >> /etc/sysctl.conf
         sysctl -p &>/dev/null
-        success "TCP BBR 已开启"
+        success "TCP BBR 已成功开启"
     else
-        info "TCP BBR 已经开启"
+        info "TCP BBR 已经开启，无需操作"
     fi
 }
 
@@ -183,7 +219,7 @@ function task_swap() {
 function task_all() {
     task_source
     task_essentials
-    task_sys_config
+    task_sys_config  # 包含时区选择
     task_docker
     task_swap
     task_firewall
