@@ -220,8 +220,8 @@ function task_firewall() {
 function task_all() {
     task_source
     task_essentials
-    task_timezone    # 独立调用，等待用户选择
-    task_bbr         # 独立调用，已开启则跳过
+    task_timezone
+    task_bbr
     task_swap
     task_docker
     task_firewall
@@ -252,8 +252,8 @@ function show_menu() {
     echo -e " ${CYAN}[ 系统基础 ]${PLAIN}"
     echo -e "   ${GREEN}1.${PLAIN} 配置软件源 (LinuxMirrors)"
     echo -e "   ${GREEN}2.${PLAIN} 安装基础软件 (Fail2Ban/Curl...)"
-    echo -e "   ${GREEN}3.${PLAIN} 配置系统时区 ${YELLOW}(选择)${PLAIN}"
-    echo -e "   ${GREEN}4.${PLAIN} 开启 TCP BBR ${YELLOW}(智能跳过)${PLAIN}"
+    echo -e "   ${GREEN}3.${PLAIN} 配置系统时区"
+    echo -e "   ${GREEN}4.${PLAIN} 开启 TCP BBR"
     echo -e "   ${GREEN}5.${PLAIN} 配置 Swap 交换空间"
     echo -e ""
     echo -e " ${CYAN}[ 软件应用 ]${PLAIN}"
