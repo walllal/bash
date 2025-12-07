@@ -246,7 +246,7 @@ function task_all() {
 function show_menu() {
     clear
     echo -e "${BLUE}=============================================================${PLAIN}"
-    echo -e "${BOLD}            🚀 Linux 服务器初始化助手 (Pro V3)            ${PLAIN}"
+    echo -e "${BOLD}             Linux 服务器初始化助手                           ${PLAIN}"
     echo -e "${BLUE}=============================================================${PLAIN}"
     echo -e ""
     echo -e " ${CYAN}[ 系统基础 ]${PLAIN}"
