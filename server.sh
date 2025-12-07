@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # ==============================================================
-#  Linux Server Initialization Script (Ultimate Edition v3)
+#  Linux Server Initialization Script (Ultimate Edition v4)
 #  Author: Customized based on user request
 #  System: Debian / Ubuntu
 # ==============================================================
@@ -57,27 +57,21 @@ function task_source() {
     esac
 }
 
-# [2] 基础组件安装
+# [2] 基础组件安装 (不含防火墙)
 function task_essentials() {
     header "安装基础软件包"
     info "正在更新软件包列表..."
     apt update -y
     
-    info "正在安装常用工具 (curl, git, vim, htop, fail2ban...)"
-    PACKAGES="build-essential curl wget git vim nano unzip zip htop net-tools sudo fail2ban ufw"
+    info "正在安装常用工具 (curl, git, vim, htop, unzip...)"
+    # 已移除 ufw 和 fail2ban
+    PACKAGES="build-essential curl wget git vim nano unzip zip htop net-tools sudo"
     apt install -y $PACKAGES
     
-    # 配置 Fail2Ban
-    if [ -f /etc/fail2ban/jail.conf ] && [ ! -f /etc/fail2ban/jail.local ]; then
-        cp /etc/fail2ban/jail.conf /etc/fail2ban/jail.local
-        systemctl enable fail2ban &>/dev/null
-        systemctl start fail2ban &>/dev/null
-        success "Fail2Ban 已启用"
-    fi
-    success "基础软件安装完成"
+    success "基础系统工具安装完成"
 }
 
-# [3] 配置时区 (独立拆分)
+# [3] 配置时区
 function task_timezone() {
     header "配置系统时区"
     
@@ -119,7 +113,7 @@ function task_timezone() {
     fi
 }
 
-# [4] 开启 BBR (独立拆分)
+# [4] 开启 BBR
 function task_bbr() {
     header "配置 TCP BBR 拥塞控制"
     
@@ -198,21 +192,42 @@ function task_ssh() {
     warn "请务必新开一个终端窗口测试连接，确保无误后再关闭当前窗口！"
 }
 
-# [9] 配置防火墙
+# [9] 配置防火墙与Fail2Ban
 function task_firewall() {
-    header "配置防火墙 (UFW)"
-    warn "如果后续安装 1Panel，建议跳过此步，直接在面板中管理。"
-    read -p "是否初始化 UFW (仅开放 22,80,443)? (y/n): " choice
+    header "安全防护配置 (UFW & Fail2Ban)"
+    
+    # --- Part 1: 安装软件 ---
+    info "正在安装 UFW 和 Fail2Ban..."
+    apt install -y ufw fail2ban
+    
+    # --- Part 2: 配置 Fail2Ban ---
+    info "正在配置 Fail2Ban (防暴力破解)..."
+    if [ -f /etc/fail2ban/jail.conf ] && [ ! -f /etc/fail2ban/jail.local ]; then
+        cp /etc/fail2ban/jail.conf /etc/fail2ban/jail.local
+        systemctl enable fail2ban &>/dev/null
+        systemctl start fail2ban &>/dev/null
+        success "Fail2Ban 已启用"
+    else
+        info "Fail2Ban 配置文件已存在，跳过覆盖。"
+    fi
+
+    # --- Part 3: 配置 UFW ---
+    print_line
+    warn "注意：如果后续使用 1Panel 等面板管理端口，UFW 可选跳过。"
+    read -p "是否初始化 UFW 规则 (仅开放 22,80,443)? (y/n): " choice
     if [[ "$choice" == "y" ]]; then
+        info "正在设置 UFW 规则..."
         ufw default deny incoming
         ufw default allow outgoing
         ufw allow 22/tcp
         ufw allow 80/tcp
         ufw allow 443/tcp
+        
+        # 自动确认 "Command may disrupt existing ssh connections"
         echo "y" | ufw enable
-        success "UFW 防火墙已启用"
+        success "UFW 防火墙已启用，默认规则已生效"
     else
-        info "已跳过"
+        info "已跳过 UFW 规则设置 (Fail2Ban 依然保持运行)"
     fi
 }
 
@@ -220,11 +235,11 @@ function task_firewall() {
 function task_all() {
     task_source
     task_essentials
-    task_timezone
-    task_bbr
+    task_timezone    
+    task_bbr         
     task_swap
     task_docker
-    task_firewall
+    task_firewall  # 包含安装 UFW/Fail2Ban + 配置
     task_ssh
     
     header "初始化完成"
@@ -246,12 +261,12 @@ function task_all() {
 function show_menu() {
     clear
     echo -e "${BLUE}=============================================================${PLAIN}"
-    echo -e "${BOLD}             Linux 服务器初始化助手                           ${PLAIN}"
+    echo -e "${BOLD}            🚀 Linux 服务器初始化助手 (Pro V4)            ${PLAIN}"
     echo -e "${BLUE}=============================================================${PLAIN}"
     echo -e ""
     echo -e " ${CYAN}[ 系统基础 ]${PLAIN}"
     echo -e "   ${GREEN}1.${PLAIN} 配置软件源 (LinuxMirrors)"
-    echo -e "   ${GREEN}2.${PLAIN} 安装基础软件 (Fail2Ban/Curl...)"
+    echo -e "   ${GREEN}2.${PLAIN} 安装基础工具"
     echo -e "   ${GREEN}3.${PLAIN} 配置系统时区"
     echo -e "   ${GREEN}4.${PLAIN} 开启 TCP BBR"
     echo -e "   ${GREEN}5.${PLAIN} 配置 Swap 交换空间"
@@ -262,7 +277,7 @@ function show_menu() {
     echo -e ""
     echo -e " ${CYAN}[ 安全加固 ]${PLAIN}"
     echo -e "   ${GREEN}8.${PLAIN} 配置 SSH 密钥登录 ${RED}(禁密码)${PLAIN}"
-    echo -e "   ${GREEN}9.${PLAIN} 配置 UFW 防火墙"
+    echo -e "   ${GREEN}9.${PLAIN} 防火墙与入侵防御 ${YELLOW}(UFW & Fail2Ban)${PLAIN}"
     echo -e ""
     echo -e "${BLUE}-------------------------------------------------------------${PLAIN}"
     echo -e "   ${GREEN}0.${PLAIN} ${BOLD}一键执行所有基础配置${PLAIN} (1-6, 8-9)"
