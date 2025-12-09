@@ -76,6 +76,7 @@ function task_timezone() {
     header "配置系统时区"
     
     echo -e "当前系统时间: $(date)"
+    timedatectl
     echo -e "请从下方列表中选择目标时区："
     echo -e "  ${GREEN}1.${PLAIN} UTC (通用协调时间)"
     echo -e "  ${GREEN}2.${PLAIN} Asia/Shanghai (中国/北京)"
