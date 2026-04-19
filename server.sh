@@ -1,313 +1,180 @@
 #!/bin/bash
-
 # ==============================================================
-#  Linux Server Initialization Script (Ultimate Edition v4)
-#  Author: Customized based on user request
-#  System: Debian / Ubuntu
+#  Linux Server Initialization Script (Pro V8)
+#  Usage: bash <(curl -sL https://raw.githubusercontent.com/walllal/bash/refs/heads/main/server.sh)
 # ==============================================================
 
-# --- 颜色与样式定义 ---
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[0;33m'
-BLUE='\033[0;34m'
-PURPLE='\033[0;35m'
-CYAN='\033[0;36m'
-PLAIN='\033[0m'
-BOLD='\033[1m'
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[0;33m'
+BLUE='\033[0;34m'; PURPLE='\033[0;35m'; CYAN='\033[0;36m'
+PLAIN='\033[0m';   BOLD='\033[1m'
 
-# --- 辅助函数 ---
+BASE_URL="https://raw.githubusercontent.com/walllal/bash/refs/heads/main/modules"
+
 function print_line() { echo -e "${BLUE}-------------------------------------------------------------${PLAIN}"; }
-function info() { echo -e "${BLUE}[INFO]${PLAIN} $1"; }
-function success() { echo -e "${GREEN}[OK]${PLAIN} $1"; }
-function warn() { echo -e "${YELLOW}[WARN]${PLAIN} $1"; }
-function error() { echo -e "${RED}[ERROR]${PLAIN} $1"; }
-function header() { 
+function info()    { echo -e "${BLUE}[INFO]${PLAIN}  $1"; }
+function success() { echo -e "${GREEN}[OK]${PLAIN}    $1"; }
+function warn()    { echo -e "${YELLOW}[WARN]${PLAIN}  $1"; }
+function error()   { echo -e "${RED}[ERROR]${PLAIN} $1"; }
+
+[[ $EUID -ne 0 ]] && error "必须使用 root 用户运行！" && exit 1
+[[ ! -f /etc/debian_version ]] && error "仅支持 Debian / Ubuntu！" && exit 1
+
+# 调用模块
+function run() { bash <(curl -sL "${BASE_URL}/$1"); }
+# 调用模块（重置模式）
+function run_reset() { bash <(curl -sL "${BASE_URL}/$1") --reset; }
+
+function show_sysinfo() {
+    local os kernel ip mem_used mem_total disk_used disk_total
+    os=$(grep PRETTY_NAME /etc/os-release 2>/dev/null | cut -d'"' -f2)
+    kernel=$(uname -r)
+    ip=$(curl -s4m5 ifconfig.me 2>/dev/null || echo "获取失败")
+    mem_used=$(free -m | awk '/Mem/{print $3}')
+    mem_total=$(free -m | awk '/Mem/{print $2}')
+    disk_used=$(df -h / | awk 'NR==2{print $3}')
+    disk_total=$(df -h / | awk 'NR==2{print $2}')
     echo -e ""
-    print_line
-    echo -e "${PURPLE}# $1${PLAIN}"
-    print_line
+    echo -e " ${CYAN}主机名:${PLAIN} $(hostname)   ${CYAN}系统:${PLAIN} $os"
+    echo -e " ${CYAN}内核:  ${PLAIN} $kernel        ${CYAN}IP:${PLAIN} $ip"
+    echo -e " ${CYAN}内存:  ${PLAIN} ${mem_used}MB / ${mem_total}MB   ${CYAN}磁盘:${PLAIN} ${disk_used} / ${disk_total}"
+    echo -e " ${CYAN}时间:  ${PLAIN} $(date '+%Y-%m-%d %H:%M:%S %Z')"
 }
 
-# --- 权限检查 ---
-[[ $EUID -ne 0 ]] && error "必须使用 root 用户运行此脚本！" && exit 1
-
-# --- 环境预检 ---
-if ! command -v curl &> /dev/null; then
-    warn "未检测到 curl，正在安装..."
-    apt-get update -qq && apt-get install -y -qq curl
-fi
-
-# ==============================================================
-#  核心功能模块
-# ==============================================================
-
-# [1] 配置软件源
-function task_source() {
-    header "配置系统软件源"
-    echo -e "请选择服务器网络环境："
-    echo -e "  ${GREEN}1.${PLAIN} 国内服务器 (清华/中科大/阿里等镜像)"
-    echo -e "  ${GREEN}2.${PLAIN} 海外服务器 (官方源/全球CDN)"
-    read -p "请输入选择 [1/2]: " choice
-
-    case "$choice" in
-        1) bash <(curl -sSL https://linuxmirrors.cn/main.sh) ;;
-        2) bash <(curl -sSL https://linuxmirrors.cn/main.sh) --abroad ;;
-        *) warn "跳过源更新..." ;;
-    esac
+function show_reset_menu() {
+    while true; do
+        clear
+        echo -e "${RED}=============================================================${PLAIN}"
+        echo -e "${BOLD}               ⚠️   重置 / 回退操作中心                   ${PLAIN}"
+        echo -e "${RED}=============================================================${PLAIN}"
+        echo -e ""
+        echo -e " ${CYAN}[ 系统基础 ]${PLAIN}"
+        echo -e "   ${RED}r1.${PLAIN}  恢复原始软件源"
+        echo -e "   ${RED}r2.${PLAIN}  卸载基础软件包"
+        echo -e "   ${RED}r3.${PLAIN}  恢复原始时区"
+        echo -e "   ${RED}r4.${PLAIN}  关闭 TCP BBR"
+        echo -e "   ${RED}r5.${PLAIN}  关闭并删除 Swap"
+        echo -e "   ${RED}r6.${PLAIN}  恢复原始主机名"
+        echo -e "   ${RED}r7.${PLAIN}  移除内核参数优化"
+        echo -e ""
+        echo -e " ${CYAN}[ 软件应用 ]${PLAIN}"
+        echo -e "   ${RED}r8.${PLAIN}  卸载 Docker"
+        echo -e "   ${RED}r9.${PLAIN}  卸载 1Panel"
+        echo -e ""
+        echo -e " ${CYAN}[ 安全加固 ]${PLAIN}"
+        echo -e "   ${RED}r10.${PLAIN} 删除创建的用户"
+        echo -e "   ${RED}r11.${PLAIN} 恢复 SSH 原始配置"
+        echo -e "   ${RED}r12.${PLAIN} 恢复原始 SSH 端口"
+        echo -e "   ${RED}r13.${PLAIN} 关闭 Telegram 登录通知"
+        echo -e "   ${RED}r14.${PLAIN} 关闭防火墙与 Fail2Ban"
+        echo -e "   ${RED}r15.${PLAIN} 卸载 rkhunter"
+        echo -e "   ${RED}r16.${PLAIN} 关闭自动安全更新"
+        echo -e ""
+        echo -e " ${CYAN}[ 体验优化 ]${PLAIN}"
+        echo -e "   ${RED}r17.${PLAIN} 恢复默认 MOTD"
+        echo -e "   ${RED}r18.${PLAIN} 卸载 ZSH 环境"
+        echo -e ""
+        echo -e "${RED}-------------------------------------------------------------${PLAIN}"
+        echo -e "   ${GREEN}b.${PLAIN}  返回主菜单"
+        echo -e "${RED}=============================================================${PLAIN}"
+        echo -e ""
+        read -rp " 请输入重置选项: " choice
+        echo ""
+        case "$choice" in
+            r1)  run_reset source.sh ;;
+            r2)  run_reset essentials.sh ;;
+            r3)  run_reset timezone.sh ;;
+            r4)  run_reset bbr.sh ;;
+            r5)  run_reset swap.sh ;;
+            r6)  run_reset hostname.sh ;;
+            r7)  run_reset sysctl.sh ;;
+            r8)  run_reset docker.sh ;;
+            r9)  run_reset 1panel.sh ;;
+            r10) run_reset user.sh ;;
+            r11) run_reset ssh.sh ;;
+            r12) run_reset ssh-port.sh ;;
+            r13) run_reset notify.sh ;;
+            r14) run_reset firewall.sh ;;
+            r15) run_reset rkhunter.sh ;;
+            r16) run_reset autoupdate.sh ;;
+            r17) run_reset motd.sh ;;
+            r18) run_reset zsh.sh ;;
+            b|B) return ;;
+            *) error "无效输入" ;;
+        esac
+        echo ""
+        read -rp " 按回车键继续..."
+    done
 }
 
-# [2] 基础组件安装 (不含防火墙)
-function task_essentials() {
-    header "安装基础软件包"
-    info "正在更新软件包列表..."
-    apt update -y
-    
-    info "正在安装常用工具 (curl, git, vim, htop, unzip...)"
-    # 已移除 ufw 和 fail2ban
-    PACKAGES="build-essential curl wget git vim nano unzip zip htop net-tools sudo"
-    apt install -y $PACKAGES
-    
-    success "基础系统工具安装完成"
-}
-
-# [3] 配置时区
-function task_timezone() {
-    header "配置系统时区"
-    
-    echo -e "当前系统时间: $(date)"
-    timedatectl
-    echo -e "请从下方列表中选择目标时区："
-    echo -e "  ${GREEN}1.${PLAIN} UTC (通用协调时间)"
-    echo -e "  ${GREEN}2.${PLAIN} Asia/Shanghai (中国/北京)"
-    echo -e "  ${GREEN}3.${PLAIN} Asia/Hong_Kong (香港)"
-    echo -e "  ${GREEN}4.${PLAIN} Asia/Tokyo (日本)"
-    echo -e "  ${GREEN}5.${PLAIN} America/Los_Angeles (美西/洛杉矶)"
-    echo -e "  ${GREEN}6.${PLAIN} America/New_York (美东/纽约)"
-    echo -e "  ${GREEN}7.${PLAIN} Europe/London (英国/伦敦)"
-    echo -e "  ${GREEN}8.${PLAIN} Europe/Berlin (德国/柏林)"
-    echo -e "  ${GREEN}9.${PLAIN} 手动输入 (自定义)"
-    
-    read -p "请输入选项编号 [1-9] (默认 2): " tz_opt
-    
-    # 默认处理
-    [[ -z "$tz_opt" ]] && tz_opt="2"
-    
-    case "$tz_opt" in
-        1) MY_TZ="UTC" ;;
-        2) MY_TZ="Asia/Shanghai" ;;
-        3) MY_TZ="Asia/Hong_Kong" ;;
-        4) MY_TZ="Asia/Tokyo" ;;
-        5) MY_TZ="America/Los_Angeles" ;;
-        6) MY_TZ="America/New_York" ;;
-        7) MY_TZ="Europe/London" ;;
-        8) MY_TZ="Europe/Berlin" ;;
-        9) read -p "请输入时区代码 (如 Asia/Singapore): " manual_tz
-           MY_TZ="$manual_tz" ;;
-        *) warn "输入无效，默认使用 Asia/Shanghai"; MY_TZ="Asia/Shanghai" ;;
-    esac
-
-    if [[ -n "$MY_TZ" ]]; then
-        timedatectl set-timezone "$MY_TZ"
-        success "时区已更新为: $MY_TZ"
-        info "更新后时间: $(date)"
-    fi
-}
-
-# [4] 开启 BBR
-function task_bbr() {
-    header "配置 TCP BBR 拥塞控制"
-    
-    if grep -q "net.ipv4.tcp_congestion_control=bbr" /etc/sysctl.conf; then
-        warn "检测到 BBR 已经开启，跳过此步骤。"
-    else
-        info "正在开启 BBR..."
-        echo "net.core.default_qdisc=fq" >> /etc/sysctl.conf
-        echo "net.ipv4.tcp_congestion_control=bbr" >> /etc/sysctl.conf
-        sysctl -p &>/dev/null
-        success "TCP BBR 已成功开启"
-    fi
-}
-
-# [5] 配置 Swap
-function task_swap() {
-    header "配置 Swap 交换空间"
-    info "正在拉取 Swap 管理脚本..."
-    bash <(curl -sL https://raw.githubusercontent.com/walllal/bash/refs/heads/main/swap.sh)
-}
-
-# [6] 安装 Docker
-function task_docker() {
-    header "安装 Docker 环境"
-    if command -v docker &> /dev/null; then
-        warn "Docker 已安装，跳过"
-    else
-        bash <(curl -sSL https://linuxmirrors.cn/docker.sh)
-    fi
-}
-
-# [7] 安装 1Panel
-function task_1panel() {
-    header "安装 1Panel 面板"
-    
-    if ! command -v docker &> /dev/null; then
-        warn "前置依赖 Docker 未找到，即将先安装 Docker..."
-        task_docker
-    fi
-    
-    info "启动 1Panel 官方安装脚本..."
-    bash -c "$(curl -sSL https://resource.fit2cloud.com/1panel/package/v2/quick_start.sh)"
-}
-
-# [8] 配置 SSH
-function task_ssh() {
-    header "配置 SSH 安全登录"
-    echo -e "此操作将：\n 1. 导入您的 SSH 公钥\n 2. ${RED}禁用密码登录${PLAIN} (提高安全性)"
-    read -p "确认执行? (y/n): " choice
-    [[ "$choice" != "y" ]] && return
-
-    echo -e "${YELLOW}请粘贴您的 SSH 公钥 (ssh-ed25519/ssh-rsa ...):${PLAIN}"
-    read pubkey
-    
-    if [[ -z "$pubkey" ]]; then
-        error "公钥为空，已取消操作"
-        return
-    fi
-
-    mkdir -p ~/.ssh && chmod 700 ~/.ssh
-    
-    if ! grep -q "$pubkey" ~/.ssh/authorized_keys 2>/dev/null; then
-        echo "$pubkey" >> ~/.ssh/authorized_keys
-        chmod 600 ~/.ssh/authorized_keys
-        success "公钥已导入"
-    else
-        warn "该公钥已存在"
-    fi
-
-    cp /etc/ssh/sshd_config "/etc/ssh/sshd_config.bak.$(date +%F_%T)"
-    sed -i 's/^#\?PubkeyAuthentication.*/PubkeyAuthentication yes/g' /etc/ssh/sshd_config
-    sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication no/g' /etc/ssh/sshd_config
-    
-    systemctl restart sshd
-    success "SSH 配置已更新"
-    warn "请务必新开一个终端窗口测试连接，确保无误后再关闭当前窗口！"
-}
-
-# [9] 配置防火墙与Fail2Ban
-function task_firewall() {
-    header "安全防护配置 (UFW & Fail2Ban)"
-    
-    # --- Part 1: 安装软件 ---
-    info "正在安装 UFW 和 Fail2Ban..."
-    apt install -y ufw fail2ban
-    
-    # --- Part 2: 配置 Fail2Ban ---
-    info "正在配置 Fail2Ban (防暴力破解)..."
-    if [ -f /etc/fail2ban/jail.conf ] && [ ! -f /etc/fail2ban/jail.local ]; then
-        cp /etc/fail2ban/jail.conf /etc/fail2ban/jail.local
-        systemctl enable fail2ban &>/dev/null
-        systemctl start fail2ban &>/dev/null
-        success "Fail2Ban 已启用"
-    else
-        info "Fail2Ban 配置文件已存在，跳过覆盖。"
-    fi
-
-    # --- Part 3: 配置 UFW ---
-    print_line
-    warn "注意：如果后续使用 1Panel 等面板管理端口，UFW 可选跳过。"
-    read -p "是否初始化 UFW 规则 (仅开放 22,80,443)? (y/n): " choice
-    if [[ "$choice" == "y" ]]; then
-        info "正在设置 UFW 规则..."
-        ufw default deny incoming
-        ufw default allow outgoing
-        ufw allow 22/tcp
-        ufw allow 80/tcp
-        ufw allow 443/tcp
-        
-        # 自动确认 "Command may disrupt existing ssh connections"
-        echo "y" | ufw enable
-        success "UFW 防火墙已启用，默认规则已生效"
-    else
-        info "已跳过 UFW 规则设置 (Fail2Ban 依然保持运行)"
-    fi
-}
-
-# [0] 一键全流程
 function task_all() {
-    task_source
-    task_essentials
-    task_timezone    
-    task_bbr         
-    task_swap
-    task_docker
-    task_firewall  # 包含安装 UFW/Fail2Ban + 配置
-    task_ssh
-    
-    header "初始化完成"
-    success "所有基础任务已执行完毕！"
-    echo -e "-------------------------------------------------------------"
-    read -p "是否继续安装 1Panel 面板? (y/n): " install_panel
-    if [[ "$install_panel" == "y" ]]; then
-        task_1panel
-    fi
-    
-    echo -e "${YELLOW}为了确保所有内核参数和更新生效，建议重启服务器。${PLAIN}"
-    read -p "是否立即重启? (y/n): " reboot_now
-    [[ "$reboot_now" == "y" ]] && reboot
+    warn "将依次执行所有基础配置任务"
+    read -rp "确认开始? (y/n): " confirm
+    [[ "$confirm" != "y" ]] && return
+    run source.sh; run essentials.sh; run hostname.sh; run timezone.sh
+    run bbr.sh;    run swap.sh;       run sysctl.sh;  run user.sh
+    run ssh.sh;    run ssh-port.sh;   run firewall.sh; run rkhunter.sh
+    run autoupdate.sh; run motd.sh;   run zsh.sh
+    echo ""
+    success "所有基础任务执行完毕！"
+    read -rp "是否配置 Telegram 通知? (y/n): " n; [[ "$n" == "y" ]] && run notify.sh
+    read -rp "是否安装 Docker? (y/n): "         d; [[ "$d" == "y" ]] && run docker.sh
+    read -rp "是否安装 1Panel? (y/n): "         p; [[ "$p" == "y" ]] && run 1panel.sh
+    read -rp "是否立即重启? (y/n): " rb; [[ "$rb" == "y" ]] && reboot
 }
 
-# ==============================================================
-#  主菜单界面
-# ==============================================================
 function show_menu() {
-    clear
-    echo -e "${BLUE}=============================================================${PLAIN}"
-    echo -e "${BOLD}            🚀 Linux 服务器初始化助手 (Pro V4)            ${PLAIN}"
-    echo -e "${BLUE}=============================================================${PLAIN}"
-    echo -e ""
-    echo -e " ${CYAN}[ 系统基础 ]${PLAIN}"
-    echo -e "   ${GREEN}1.${PLAIN} 配置软件源 (LinuxMirrors)"
-    echo -e "   ${GREEN}2.${PLAIN} 安装基础工具"
-    echo -e "   ${GREEN}3.${PLAIN} 配置系统时区"
-    echo -e "   ${GREEN}4.${PLAIN} 开启 TCP BBR"
-    echo -e "   ${GREEN}5.${PLAIN} 配置 Swap 交换空间"
-    echo -e ""
-    echo -e " ${CYAN}[ 软件应用 ]${PLAIN}"
-    echo -e "   ${GREEN}6.${PLAIN} 安装 Docker 环境"
-    echo -e "   ${GREEN}7.${PLAIN} 安装 1Panel 面板"
-    echo -e ""
-    echo -e " ${CYAN}[ 安全加固 ]${PLAIN}"
-    echo -e "   ${GREEN}8.${PLAIN} 配置 SSH 密钥登录 ${RED}(禁密码)${PLAIN}"
-    echo -e "   ${GREEN}9.${PLAIN} 防火墙与入侵防御 ${YELLOW}(UFW & Fail2Ban)${PLAIN}"
-    echo -e ""
-    echo -e "${BLUE}-------------------------------------------------------------${PLAIN}"
-    echo -e "   ${GREEN}0.${PLAIN} ${BOLD}一键执行所有基础配置${PLAIN} (1-6, 8-9)"
-    echo -e "   ${GREEN}q.${PLAIN} 退出脚本"
-    echo -e "${BLUE}=============================================================${PLAIN}"
-    echo -e ""
-    read -p " 请输入选项编号: " choice
-
-    case "$choice" in
-        1) task_source ;;
-        2) task_essentials ;;
-        3) task_timezone ;;
-        4) task_bbr ;;
-        5) task_swap ;;
-        6) task_docker ;;
-        7) task_1panel ;;
-        8) task_ssh ;;
-        9) task_firewall ;;
-        0) task_all ;;
-        q) exit 0 ;;
-        *) error "无效输入" ;;
-    esac
-    
-    echo -e ""
-    if [[ "$choice" != "q" ]]; then
-        read -p "按回车键返回主菜单..."
-        show_menu
-    fi
+    while true; do
+        clear
+        echo -e "${BLUE}=============================================================${PLAIN}"
+        echo -e "${BOLD}          🚀  Linux 服务器初始化助手  (Pro V8)           ${PLAIN}"
+        echo -e "${BLUE}=============================================================${PLAIN}"
+        show_sysinfo
+        echo -e "${BLUE}-------------------------------------------------------------${PLAIN}"
+        echo -e ""
+        echo -e " ${CYAN}[ 系统基础 ]${PLAIN}"
+        echo -e "   ${GREEN}1.${PLAIN}   配置软件源         ${GREEN}2.${PLAIN}  安装基础工具"
+        echo -e "   ${GREEN}3.${PLAIN}   配置时区(NTP)       ${GREEN}4.${PLAIN}  开启 TCP BBR"
+        echo -e "   ${GREEN}5.${PLAIN}   配置 Swap           ${GREEN}6.${PLAIN}  配置主机名"
+        echo -e "   ${GREEN}7.${PLAIN}   内核参数优化"
+        echo -e ""
+        echo -e " ${CYAN}[ 软件应用 ]${PLAIN}"
+        echo -e "   ${GREEN}8.${PLAIN}   安装 Docker         ${GREEN}9.${PLAIN}  安装 1Panel"
+        echo -e ""
+        echo -e " ${CYAN}[ 安全加固 ]${PLAIN}"
+        echo -e "   ${GREEN}10.${PLAIN}  创建普通用户        ${GREEN}11.${PLAIN} SSH 密钥登录"
+        echo -e "   ${GREEN}12.${PLAIN}  修改 SSH 端口       ${GREEN}13.${PLAIN} Telegram 登录通知"
+        echo -e "   ${GREEN}14.${PLAIN}  UFW & Fail2Ban      ${GREEN}15.${PLAIN} rkhunter 检测"
+        echo -e "   ${GREEN}16.${PLAIN}  自动安全更新"
+        echo -e ""
+        echo -e " ${CYAN}[ 体验优化 ]${PLAIN}"
+        echo -e "   ${GREEN}17.${PLAIN}  MOTD 美化           ${GREEN}18.${PLAIN} ZSH 环境"
+        echo -e ""
+        echo -e "${BLUE}-------------------------------------------------------------${PLAIN}"
+        echo -e "   ${GREEN}0.${PLAIN}   一键全部配置"
+        echo -e "   ${RED}r.${PLAIN}   重置 / 回退中心"
+        echo -e "   ${GREEN}q.${PLAIN}   退出"
+        echo -e "${BLUE}=============================================================${PLAIN}"
+        echo -e ""
+        read -rp " 请输入选项: " choice
+        echo ""
+        case "$choice" in
+            1)  run source.sh ;;     2)  run essentials.sh ;;
+            3)  run timezone.sh ;;   4)  run bbr.sh ;;
+            5)  run swap.sh ;;       6)  run hostname.sh ;;
+            7)  run sysctl.sh ;;     8)  run docker.sh ;;
+            9)  run 1panel.sh ;;     10) run user.sh ;;
+            11) run ssh.sh ;;        12) run ssh-port.sh ;;
+            13) run notify.sh ;;     14) run firewall.sh ;;
+            15) run rkhunter.sh ;;   16) run autoupdate.sh ;;
+            17) run motd.sh ;;       18) run zsh.sh ;;
+            0)  task_all ;;
+            r|R) show_reset_menu ;;
+            q|Q) success "已退出"; exit 0 ;;
+            *) error "无效输入" ;;
+        esac
+        echo ""
+        read -rp " 按回车键返回主菜单..."
+    done
 }
 
-# 启动菜单
 show_menu
