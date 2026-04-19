@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # ==============================================================
-#  Linux Server Initialization Script (Ultimate Edition v8)
+#  Linux Server Initialization Script (Ultimate Edition v7)
 #  Author: Optimized Edition
 #  System: Debian / Ubuntu
 # ==============================================================
@@ -40,95 +40,6 @@ if [[ ! -f /etc/debian_version ]]; then
     error "此脚本仅支持 Debian / Ubuntu 系统！"
     exit 1
 fi
-
-# ==============================================================
-#  状态管理 & 脚本缓存
-# ==============================================================
-
-# 状态目录：保存每个模块执行前的原始配置，供回退使用
-STATE_DIR="/etc/server-init/state"
-# 脚本缓存目录：外部脚本下载后缓存到本地，避免重复下载
-CACHE_DIR="/etc/server-init/cache"
-# 缓存有效期（秒），默认 7 天
-CACHE_TTL=$((7 * 24 * 3600))
-
-mkdir -p "$STATE_DIR" "$CACHE_DIR"
-
-# ---------------------------------------------------------------
-# 缓存下载函数
-# 说明：
-#   对于【第三方安装脚本】(linuxmirrors / docker / 1panel)
-#   这类脚本必须从网络获取，因为它们需要根据你当前系统环境
-#   动态生成安装命令，本地无法预置。但我们可以缓存到本地，
-#   避免每次都重新下载，同时支持查看内容后再执行。
-#
-#   对于【自有脚本】(swap.sh) 同样缓存，逻辑一致。
-#
-# 用法: fetch_script <URL> <本地缓存文件名>
-#   返回缓存文件的完整路径（通过 echo）
-# ---------------------------------------------------------------
-function fetch_script() {
-    local url="$1"
-    local cache_name="$2"
-    local cache_file="$CACHE_DIR/$cache_name"
-    local now
-    now=$(date +%s)
-
-    # 检查缓存是否存在且未过期
-    if [[ -f "$cache_file" ]]; then
-        local file_mtime
-        file_mtime=$(stat -c %Y "$cache_file" 2>/dev/null || echo 0)
-        local age=$(( now - file_mtime ))
-        if [[ $age -lt $CACHE_TTL ]]; then
-            info "使用本地缓存脚本 ($(( age / 3600 ))小时前下载): $cache_file"
-            echo "$cache_file"
-            return 0
-        else
-            info "缓存已过期 ($(( age / 3600 ))小时)，重新下载..."
-        fi
-    fi
-
-    # 下载脚本
-    info "正在下载脚本: $url"
-    if curl -sSL "$url" -o "$cache_file" --connect-timeout 15 --max-time 60; then
-        chmod +x "$cache_file"
-        success "下载完成，已缓存至: $cache_file"
-        echo "$cache_file"
-        return 0
-    else
-        error "下载失败: $url"
-        rm -f "$cache_file"
-        return 1
-    fi
-}
-
-# 查看脚本内容（执行前可选预览）
-function preview_script() {
-    local script_file="$1"
-    local script_name="$2"
-    echo ""
-    warn "即将执行外部脚本: ${script_name}"
-    warn "脚本路径: ${script_file}"
-    read -rp "是否在执行前查看脚本内容? (y/n): " view_it
-    if [[ "$view_it" == "y" ]]; then
-        echo ""
-        echo -e "${CYAN}===== 脚本内容 (前50行) =====${PLAIN}"
-        head -50 "$script_file"
-        echo -e "${CYAN}===== 内容结束 =====${PLAIN}"
-        echo ""
-        read -rp "确认执行? (y/n): " run_it
-        [[ "$run_it" != "y" ]] && warn "已取消执行" && return 1
-    fi
-    return 0
-}
-
-# 清理所有缓存
-function clear_cache() {
-    if [[ -d "$CACHE_DIR" ]]; then
-        rm -f "$CACHE_DIR"/*.sh
-        success "脚本缓存已清空: $CACHE_DIR"
-    fi
-}
 
 # --- 环境预检：确保 curl 可用 ---
 if ! command -v curl &>/dev/null; then
@@ -171,71 +82,17 @@ function show_sysinfo() {
 # ---------------------------------------------------------------
 function task_source() {
     header "[1] 配置系统软件源"
-
-    # --- 保存原始状态 ---
-    if [[ ! -f "$STATE_DIR/sources.saved" ]]; then
-        if [[ -f /etc/apt/sources.list ]]; then
-            cp /etc/apt/sources.list "$STATE_DIR/sources.list.orig"
-        fi
-        if [[ -d /etc/apt/sources.list.d ]]; then
-            tar -czf "$STATE_DIR/sources.list.d.orig.tar.gz" \
-                -C /etc/apt sources.list.d 2>/dev/null || true
-        fi
-        touch "$STATE_DIR/sources.saved"
-        info "已保存原始软件源配置"
-    fi
-
     echo -e "请选择服务器网络环境："
     echo -e "  ${GREEN}1.${PLAIN} 国内服务器 (清华/中科大/阿里等镜像)"
     echo -e "  ${GREEN}2.${PLAIN} 海外服务器 (官方源/全球CDN)"
     echo -e "  ${GREEN}3.${PLAIN} 跳过"
     read -rp "请输入选择 [1-3]: " choice
 
-    local SCRIPT_FILE
     case "$choice" in
-        1)
-            SCRIPT_FILE=$(fetch_script "https://linuxmirrors.cn/main.sh" "linuxmirrors.sh") || return 1
-            preview_script "$SCRIPT_FILE" "LinuxMirrors 换源脚本" || return 0
-            bash "$SCRIPT_FILE"
-            ;;
-        2)
-            SCRIPT_FILE=$(fetch_script "https://linuxmirrors.cn/main.sh" "linuxmirrors.sh") || return 1
-            preview_script "$SCRIPT_FILE" "LinuxMirrors 换源脚本 (海外)" || return 0
-            bash "$SCRIPT_FILE" --abroad
-            ;;
-        *)
-            warn "已跳过软件源配置"
-            ;;
+        1) bash <(curl -sSL https://linuxmirrors.cn/main.sh) ;;
+        2) bash <(curl -sSL https://linuxmirrors.cn/main.sh) --abroad ;;
+        *) warn "已跳过软件源配置" ;;
     esac
-}
-
-function reset_source() {
-    header "[重置] 恢复原始软件源"
-
-    if [[ ! -f "$STATE_DIR/sources.saved" ]]; then
-        warn "未找到软件源备份，可能从未执行过换源操作"
-        return
-    fi
-
-    warn "即将恢复原始 sources.list，当前软件源配置将丢失"
-    read -rp "确认恢复? (y/n): " confirm
-    [[ "$confirm" != "y" ]] && return
-
-    if [[ -f "$STATE_DIR/sources.list.orig" ]]; then
-        cp "$STATE_DIR/sources.list.orig" /etc/apt/sources.list
-        success "已恢复 /etc/apt/sources.list"
-    fi
-
-    if [[ -f "$STATE_DIR/sources.list.d.orig.tar.gz" ]]; then
-        rm -rf /etc/apt/sources.list.d
-        tar -xzf "$STATE_DIR/sources.list.d.orig.tar.gz" -C /etc/apt 2>/dev/null
-        success "已恢复 /etc/apt/sources.list.d/"
-    fi
-
-    apt update -y
-    rm -f "$STATE_DIR/sources.saved" "$STATE_DIR/sources.list.orig" \
-          "$STATE_DIR/sources.list.d.orig.tar.gz"
-    success "软件源已恢复至原始状态"
 }
 
 # ---------------------------------------------------------------
@@ -255,35 +112,9 @@ function task_essentials() {
         sudo jq bc
     )
 
-    # 记录本次安装的包，供回退使用
-    echo "${PACKAGES[*]}" > "$STATE_DIR/essentials_packages.txt"
-
     info "正在安装软件包: ${PACKAGES[*]}"
     apt install -y "${PACKAGES[@]}"
     success "基础系统工具安装完成"
-}
-
-function reset_essentials() {
-    header "[重置] 卸载基础软件包"
-
-    if [[ ! -f "$STATE_DIR/essentials_packages.txt" ]]; then
-        warn "未找到安装记录，无法自动卸载"
-        return
-    fi
-
-    local PACKAGES
-    read -ra PACKAGES < "$STATE_DIR/essentials_packages.txt"
-
-    warn "即将卸载以下软件包:"
-    echo "  ${PACKAGES[*]}"
-    warn "注意：如果其他程序依赖这些包，可能会造成问题！"
-    read -rp "确认卸载? (y/n): " confirm
-    [[ "$confirm" != "y" ]] && return
-
-    apt remove -y "${PACKAGES[@]}"
-    apt autoremove -y
-    rm -f "$STATE_DIR/essentials_packages.txt"
-    success "基础软件包已卸载"
 }
 
 # ---------------------------------------------------------------
@@ -291,12 +122,6 @@ function reset_essentials() {
 # ---------------------------------------------------------------
 function task_timezone() {
     header "[3] 配置系统时区"
-
-    # 保存原始时区
-    if [[ ! -f "$STATE_DIR/original_timezone" ]]; then
-        timedatectl show -p Timezone --value > "$STATE_DIR/original_timezone"
-        info "已保存原始时区: $(cat $STATE_DIR/original_timezone)"
-    fi
 
     echo -e "当前系统时间: $(date)"
     echo ""
@@ -346,27 +171,6 @@ function task_timezone() {
     info "更新后时间: $(date)"
 }
 
-function reset_timezone() {
-    header "[重置] 恢复原始时区"
-
-    if [[ ! -f "$STATE_DIR/original_timezone" ]]; then
-        warn "未找到原始时区记录，将恢复为 UTC"
-        local orig_tz="UTC"
-    else
-        local orig_tz
-        orig_tz=$(cat "$STATE_DIR/original_timezone")
-    fi
-
-    warn "即将恢复时区为: $orig_tz"
-    read -rp "确认恢复? (y/n): " confirm
-    [[ "$confirm" != "y" ]] && return
-
-    timedatectl set-timezone "$orig_tz"
-    rm -f "$STATE_DIR/original_timezone"
-    success "时区已恢复为: $orig_tz"
-    info "当前时间: $(date)"
-}
-
 # ---------------------------------------------------------------
 # [4] 开启 TCP BBR
 # ---------------------------------------------------------------
@@ -389,13 +193,6 @@ function task_bbr() {
         return
     fi
 
-    # 保存原始拥塞算法
-    if [[ ! -f "$STATE_DIR/original_cc" ]]; then
-        sysctl -n net.ipv4.tcp_congestion_control > "$STATE_DIR/original_cc"
-        sysctl -n net.core.default_qdisc > "$STATE_DIR/original_qdisc"
-        info "已保存原始算法: CC=$(cat $STATE_DIR/original_cc) QDISC=$(cat $STATE_DIR/original_qdisc)"
-    fi
-
     info "正在开启 BBR (当前算法: $CURRENT_CC)..."
 
     grep -q "^net.core.default_qdisc" /etc/sysctl.conf || \
@@ -416,37 +213,6 @@ function task_bbr() {
     fi
 }
 
-function reset_bbr() {
-    header "[重置] 关闭 TCP BBR"
-
-    if [[ ! -f "$STATE_DIR/original_cc" ]]; then
-        warn "未找到原始算法记录，将恢复为 cubic"
-        local orig_cc="cubic"
-        local orig_qdisc="pfifo_fast"
-    else
-        local orig_cc
-        local orig_qdisc
-        orig_cc=$(cat "$STATE_DIR/original_cc")
-        orig_qdisc=$(cat "$STATE_DIR/original_qdisc")
-    fi
-
-    warn "即将恢复拥塞算法为: $orig_cc，队列算法为: $orig_qdisc"
-    read -rp "确认恢复? (y/n): " confirm
-    [[ "$confirm" != "y" ]] && return
-
-    # 从 sysctl.conf 中移除 BBR 相关配置
-    sed -i '/^net.core.default_qdisc=fq/d' /etc/sysctl.conf
-    sed -i '/^net.ipv4.tcp_congestion_control=bbr/d' /etc/sysctl.conf
-
-    # 写入原始算法
-    echo "net.core.default_qdisc=$orig_qdisc" >> /etc/sysctl.conf
-    echo "net.ipv4.tcp_congestion_control=$orig_cc" >> /etc/sysctl.conf
-
-    sysctl -p &>/dev/null
-    rm -f "$STATE_DIR/original_cc" "$STATE_DIR/original_qdisc"
-    success "已恢复: 拥塞算法=$orig_cc，队列算法=$orig_qdisc"
-}
-
 # ---------------------------------------------------------------
 # [5] 配置 Swap
 # ---------------------------------------------------------------
@@ -458,44 +224,8 @@ function task_swap() {
     info "当前 Swap 大小: $current_swap"
     swapon --show
 
-    # 保存当前 Swap 状态
-    if [[ ! -f "$STATE_DIR/swap_state.txt" ]]; then
-        free -m | awk '/Swap/{print $2}' > "$STATE_DIR/swap_state.txt"
-        swapon --show --noheadings > "$STATE_DIR/swap_devices.txt" 2>/dev/null || true
-        info "已记录当前 Swap 状态"
-    fi
-
-    local SCRIPT_FILE
-    SCRIPT_FILE=$(fetch_script \
-        "https://raw.githubusercontent.com/walllal/bash/refs/heads/main/swap.sh" \
-        "swap.sh") || return 1
-    preview_script "$SCRIPT_FILE" "Swap 管理脚本" || return 0
-    bash "$SCRIPT_FILE"
-}
-
-function reset_swap() {
-    header "[重置] 关闭并删除 Swap"
-
-    warn "即将关闭所有 Swap 并删除 /swapfile"
-    read -rp "确认? (y/n): " confirm
-    [[ "$confirm" != "y" ]] && return
-
-    # 关闭所有 Swap
-    swapoff -a 2>/dev/null || true
-
-    # 删除 swapfile
-    if [[ -f /swapfile ]]; then
-        rm -f /swapfile
-        success "已删除 /swapfile"
-    fi
-
-    # 清理 /etc/fstab 中的 swap 条目
-    sed -i '/swapfile/d' /etc/fstab
-    sed -i '/swap/d' /etc/fstab
-
-    rm -f "$STATE_DIR/swap_state.txt" "$STATE_DIR/swap_devices.txt"
-    success "Swap 已完全关闭并清除"
-    free -h | grep Swap
+    info "正在拉取 Swap 管理脚本..."
+    bash <(curl -sL https://raw.githubusercontent.com/walllal/bash/refs/heads/main/swap.sh)
 }
 
 # ---------------------------------------------------------------
@@ -503,18 +233,7 @@ function reset_swap() {
 # ---------------------------------------------------------------
 function task_hostname() {
     header "[6] 配置服务器主机名"
-
-    local current_hostname
-    current_hostname=$(hostname)
-    echo -e "当前主机名: ${GREEN}${current_hostname}${PLAIN}"
-
-    # 保存原始主机名
-    if [[ ! -f "$STATE_DIR/original_hostname" ]]; then
-        echo "$current_hostname" > "$STATE_DIR/original_hostname"
-        grep "^127.0.1.1" /etc/hosts > "$STATE_DIR/original_hosts_line.txt" 2>/dev/null || true
-        info "已保存原始主机名: $current_hostname"
-    fi
-
+    echo -e "当前主机名: ${GREEN}$(hostname)${PLAIN}"
     read -rp "请输入新主机名 (直接回车跳过): " new_hostname
 
     if [[ -z "$new_hostname" ]]; then
@@ -536,32 +255,6 @@ function task_hostname() {
     fi
 
     success "主机名已更新为: $new_hostname"
-}
-
-function reset_hostname() {
-    header "[重置] 恢复原始主机名"
-
-    if [[ ! -f "$STATE_DIR/original_hostname" ]]; then
-        warn "未找到原始主机名记录"
-        return
-    fi
-
-    local orig_hostname
-    orig_hostname=$(cat "$STATE_DIR/original_hostname")
-
-    warn "即将恢复主机名为: $orig_hostname"
-    read -rp "确认恢复? (y/n): " confirm
-    [[ "$confirm" != "y" ]] && return
-
-    hostnamectl set-hostname "$orig_hostname"
-
-    # 恢复 /etc/hosts 中的 127.0.1.1 行
-    if grep -q "^127.0.1.1" /etc/hosts; then
-        sed -i "s/^127.0.1.1.*/127.0.1.1\t$orig_hostname/" /etc/hosts
-    fi
-
-    rm -f "$STATE_DIR/original_hostname" "$STATE_DIR/original_hosts_line.txt"
-    success "主机名已恢复为: $orig_hostname"
 }
 
 # ---------------------------------------------------------------
@@ -620,30 +313,7 @@ vm.dirty_background_ratio = 5
 EOF
 
     sysctl --system &>/dev/null
-    touch "$STATE_DIR/sysctl_optimized"
     success "内核参数优化完成，配置文件: $SYSCTL_CONF"
-}
-
-function reset_sysctl() {
-    header "[重置] 移除内核参数优化"
-
-    local SYSCTL_CONF="/etc/sysctl.d/99-server-optimize.conf"
-
-    if [[ ! -f "$SYSCTL_CONF" ]]; then
-        warn "优化配置文件不存在，无需重置"
-        return
-    fi
-
-    warn "即将删除优化配置文件: $SYSCTL_CONF"
-    warn "内核参数将在重启后恢复为系统默认值"
-    read -rp "确认? (y/n): " confirm
-    [[ "$confirm" != "y" ]] && return
-
-    rm -f "$SYSCTL_CONF"
-    # 立即应用（加载其余配置，去掉已删除的）
-    sysctl --system &>/dev/null
-    rm -f "$STATE_DIR/sysctl_optimized"
-    success "内核优化配置已移除，重启后完全恢复默认值"
 }
 
 # ---------------------------------------------------------------
@@ -657,53 +327,17 @@ function task_docker() {
         return
     fi
 
-    local SCRIPT_FILE
-    SCRIPT_FILE=$(fetch_script "https://linuxmirrors.cn/docker.sh" "docker-install.sh") || return 1
-    preview_script "$SCRIPT_FILE" "Docker 安装脚本 (LinuxMirrors)" || return 0
-    bash "$SCRIPT_FILE"
+    info "正在通过 LinuxMirrors 安装 Docker..."
+    bash <(curl -sSL https://linuxmirrors.cn/docker.sh)
 
     if command -v docker &>/dev/null; then
         systemctl enable docker &>/dev/null
         systemctl start docker &>/dev/null
-        touch "$STATE_DIR/docker_installed"
         success "Docker 安装成功: $(docker --version)"
     else
         error "Docker 安装未成功，请手动检查"
         return 1
     fi
-}
-
-function reset_docker() {
-    header "[重置] 卸载 Docker"
-
-    if ! command -v docker &>/dev/null; then
-        warn "Docker 未安装，无需卸载"
-        return
-    fi
-
-    warn "即将完全卸载 Docker 及相关组件"
-    warn "⚠️  所有容器、镜像、卷数据将永久丢失！"
-    read -rp "确认卸载? 请输入 'yes' 确认: " confirm
-    [[ "$confirm" != "yes" ]] && warn "已取消" && return
-
-    systemctl stop docker dockerd containerd 2>/dev/null || true
-    systemctl disable docker 2>/dev/null || true
-
-    apt remove -y docker-ce docker-ce-cli containerd.io \
-        docker-buildx-plugin docker-compose-plugin 2>/dev/null || \
-    apt remove -y docker docker-engine docker.io containerd runc 2>/dev/null || true
-
-    apt autoremove -y
-
-    # 询问是否删除数据目录
-    read -rp "是否同时删除 /var/lib/docker 数据目录? (y/n): " del_data
-    if [[ "$del_data" == "y" ]]; then
-        rm -rf /var/lib/docker /var/lib/containerd
-        success "Docker 数据目录已删除"
-    fi
-
-    rm -f "$STATE_DIR/docker_installed"
-    success "Docker 已卸载"
 }
 
 # ---------------------------------------------------------------
@@ -717,40 +351,8 @@ function task_1panel() {
         task_docker || { error "Docker 安装失败，无法继续安装 1Panel"; return 1; }
     fi
 
-    local SCRIPT_FILE
-    SCRIPT_FILE=$(fetch_script \
-        "https://resource.fit2cloud.com/1panel/package/v2/quick_start.sh" \
-        "1panel-install.sh") || return 1
-    preview_script "$SCRIPT_FILE" "1Panel 官方安装脚本" || return 0
-    bash "$SCRIPT_FILE"
-    touch "$STATE_DIR/1panel_installed"
-}
-
-function reset_1panel() {
-    header "[重置] 卸载 1Panel"
-
-    if ! command -v 1pctl &>/dev/null; then
-        warn "1Panel 未安装或已卸载"
-        return
-    fi
-
-    warn "即将卸载 1Panel 面板"
-    warn "⚠️  面板数据和已安装的应用将被移除！"
-    read -rp "确认卸载? 请输入 'yes' 确认: " confirm
-    [[ "$confirm" != "yes" ]] && warn "已取消" && return
-
-    if command -v 1pctl &>/dev/null; then
-        1pctl uninstall 2>/dev/null || true
-    fi
-
-    # 清理残留
-    systemctl stop 1panel 2>/dev/null || true
-    systemctl disable 1panel 2>/dev/null || true
-    rm -rf /opt/1panel /usr/local/bin/1pctl /etc/systemd/system/1panel.service
-    systemctl daemon-reload
-
-    rm -f "$STATE_DIR/1panel_installed"
-    success "1Panel 已卸载"
+    info "启动 1Panel 官方安装脚本..."
+    bash <(curl -sSL https://resource.fit2cloud.com/1panel/package/v2/quick_start.sh)
 }
 
 # ---------------------------------------------------------------
@@ -781,8 +383,6 @@ function task_create_user() {
         [[ "$cont" != "y" ]] && return
     else
         useradd -m -s /bin/bash "$new_user"
-        # 记录创建的用户名，供回退使用
-        echo "$new_user" >> "$STATE_DIR/created_users.txt"
         success "用户 '$new_user' 已创建，家目录: /home/$new_user"
 
         info "请为用户 '$new_user' 设置登录密码："
@@ -872,48 +472,6 @@ function task_create_user() {
     echo -e "  SSH公钥:  $([ -s "/home/$new_user/.ssh/authorized_keys" ] && echo "${GREEN}已配置${PLAIN}" || echo "${YELLOW}未配置${PLAIN}")"
 }
 
-function reset_create_user() {
-    header "[重置] 删除创建的用户"
-
-    if [[ ! -f "$STATE_DIR/created_users.txt" ]]; then
-        warn "未找到用户创建记录"
-        return
-    fi
-
-    echo -e "脚本创建的用户列表:"
-    cat "$STATE_DIR/created_users.txt" | while read -r u; do
-        if id "$u" &>/dev/null; then
-            echo -e "  ${GREEN}$u${PLAIN} (存在)"
-        else
-            echo -e "  ${YELLOW}$u${PLAIN} (已不存在)"
-        fi
-    done
-    echo ""
-
-    read -rp "请输入要删除的用户名 (直接回车跳过): " del_user
-    [[ -z "$del_user" ]] && return
-
-    if ! id "$del_user" &>/dev/null; then
-        error "用户 '$del_user' 不存在"
-        return 1
-    fi
-
-    warn "即将删除用户: $del_user"
-    read -rp "是否同时删除用户家目录 /home/$del_user ? (y/n): " del_home
-
-    if [[ "$del_home" == "y" ]]; then
-        userdel -r "$del_user" 2>/dev/null
-        success "用户 '$del_user' 及其家目录已删除"
-    else
-        userdel "$del_user" 2>/dev/null
-        success "用户 '$del_user' 已删除（家目录保留）"
-    fi
-
-    # 从记录中移除
-    sed -i "/^${del_user}$/d" "$STATE_DIR/created_users.txt"
-    [[ ! -s "$STATE_DIR/created_users.txt" ]] && rm -f "$STATE_DIR/created_users.txt"
-}
-
 # ---------------------------------------------------------------
 # [11] 配置 SSH 密钥登录
 # ---------------------------------------------------------------
@@ -952,12 +510,8 @@ function task_ssh() {
         success "公钥已写入 ~/.ssh/authorized_keys"
     fi
 
-    # 备份 sshd_config（同时写入 state 目录作为"最原始"备份）
     local BACKUP_FILE="/etc/ssh/sshd_config.bak.$(date +%F_%H%M%S)"
     cp /etc/ssh/sshd_config "$BACKUP_FILE"
-    # 如果首次备份，保存到 state
-    [[ ! -f "$STATE_DIR/sshd_config.orig" ]] && \
-        cp /etc/ssh/sshd_config "$STATE_DIR/sshd_config.orig"
     info "原配置已备份至: $BACKUP_FILE"
 
     function sshd_set() {
@@ -988,45 +542,12 @@ function task_ssh() {
     fi
 
     systemctl restart sshd
-    touch "$STATE_DIR/ssh_hardened"
     success "SSH 密钥登录配置完成，密码登录已禁用"
     echo ""
     warn "════════════════════════════════════════════════"
     warn "  ⚠️  请立即新开终端测试 SSH 连接！"
     warn "  确认可以正常登录后，再关闭当前终端！"
     warn "════════════════════════════════════════════════"
-}
-
-function reset_ssh() {
-    header "[重置] 恢复 SSH 原始配置"
-
-    if [[ ! -f "$STATE_DIR/sshd_config.orig" ]]; then
-        # 尝试找最早的备份
-        local oldest_bak
-        oldest_bak=$(ls -t /etc/ssh/sshd_config.bak.* 2>/dev/null | tail -1)
-        if [[ -z "$oldest_bak" ]]; then
-            error "未找到任何 SSH 配置备份，无法回退"
-            return 1
-        fi
-        warn "未找到 state 备份，将使用最早的备份: $oldest_bak"
-        cp "$oldest_bak" "$STATE_DIR/sshd_config.orig"
-    fi
-
-    warn "即将恢复 SSH 配置为初始状态"
-    warn "这将重新启用密码登录！"
-    read -rp "确认恢复? (y/n): " confirm
-    [[ "$confirm" != "y" ]] && return
-
-    cp "$STATE_DIR/sshd_config.orig" /etc/ssh/sshd_config
-
-    if ! sshd -t; then
-        error "恢复的配置存在语法错误，请手动检查 /etc/ssh/sshd_config"
-        return 1
-    fi
-
-    systemctl restart sshd
-    rm -f "$STATE_DIR/sshd_config.orig" "$STATE_DIR/ssh_hardened"
-    success "SSH 配置已恢复为原始状态，密码登录已重新开启"
 }
 
 # ---------------------------------------------------------------
@@ -1039,12 +560,6 @@ function task_ssh_port() {
     CURRENT_PORT=$(grep -E "^Port " /etc/ssh/sshd_config | awk '{print $2}' | head -1)
     CURRENT_PORT=${CURRENT_PORT:-22}
     info "当前 SSH 端口: ${GREEN}${CURRENT_PORT}${PLAIN}"
-
-    # 保存原始端口
-    if [[ ! -f "$STATE_DIR/original_ssh_port" ]]; then
-        echo "$CURRENT_PORT" > "$STATE_DIR/original_ssh_port"
-        info "已记录原始端口: $CURRENT_PORT"
-    fi
 
     echo ""
     warn "修改 SSH 端口可过滤绝大多数自动化扫描攻击"
@@ -1117,9 +632,6 @@ function task_ssh_port() {
         systemctl restart fail2ban &>/dev/null && success "Fail2Ban 配置已更新"
     fi
 
-    # 记录当前端口到 state
-    echo "$NEW_PORT" > "$STATE_DIR/current_ssh_port"
-
     systemctl restart sshd
     success "SSH 端口已成功修改: ${CURRENT_PORT} → ${NEW_PORT}"
 
@@ -1128,63 +640,6 @@ function task_ssh_port() {
     warn "  ⚠️  重要：请立即新开终端，使用新端口测试连接！"
     warn "  连接命令: ssh -p ${NEW_PORT} root@<你的IP>"
     warn "  确认连接成功后，再关闭当前终端！"
-    warn "════════════════════════════════════════════════════════"
-}
-
-function reset_ssh_port() {
-    header "[重置] 恢复原始 SSH 端口"
-
-    if [[ ! -f "$STATE_DIR/original_ssh_port" ]]; then
-        warn "未找到原始端口记录，默认恢复为 22"
-        local orig_port="22"
-    else
-        local orig_port
-        orig_port=$(cat "$STATE_DIR/original_ssh_port")
-    fi
-
-    local current_port
-    current_port=$(grep -E "^Port " /etc/ssh/sshd_config | awk '{print $2}' | head -1)
-    current_port=${current_port:-22}
-
-    if [[ "$current_port" == "$orig_port" ]]; then
-        warn "当前端口已是原始端口 ($orig_port)，无需恢复"
-        return
-    fi
-
-    warn "将把 SSH 端口从 ${current_port} 恢复为 ${orig_port}"
-    read -rp "确认恢复? (y/n): " confirm
-    [[ "$confirm" != "y" ]] && return
-
-    local BACKUP_FILE="/etc/ssh/sshd_config.bak.$(date +%F_%H%M%S)"
-    cp /etc/ssh/sshd_config "$BACKUP_FILE"
-
-    sed -i "s|^Port .*|Port ${orig_port}|g" /etc/ssh/sshd_config
-
-    if ! sshd -t; then
-        error "SSH 配置存在语法错误！正在自动回滚..."
-        cp "$BACKUP_FILE" /etc/ssh/sshd_config
-        return 1
-    fi
-
-    # 联动更新 UFW
-    if command -v ufw &>/dev/null && ufw status | grep -q "Status: active"; then
-        ufw allow "${orig_port}/tcp" comment 'SSH-Restored'
-        ufw delete allow "${current_port}/tcp" 2>/dev/null || true
-        success "UFW 规则已更新"
-    fi
-
-    # 联动更新 Fail2Ban
-    if [[ -f /etc/fail2ban/jail.local ]]; then
-        sed -i '/\[sshd\]/,/\[/{s/^port.*/port = '"${orig_port}"'/}' /etc/fail2ban/jail.local
-        systemctl restart fail2ban &>/dev/null
-    fi
-
-    systemctl restart sshd
-    rm -f "$STATE_DIR/original_ssh_port" "$STATE_DIR/current_ssh_port"
-    success "SSH 端口已恢复为: $orig_port"
-
-    warn "════════════════════════════════════════════════════════"
-    warn "  ⚠️  请立即新开终端，使用端口 $orig_port 测试连接！"
     warn "════════════════════════════════════════════════════════"
 }
 
@@ -1197,6 +652,7 @@ function task_ssh_notify() {
     local NOTIFY_SCRIPT="/etc/profile.d/ssh-login-notify.sh"
 
     echo -e "功能说明：每次有用户通过 SSH 登录服务器，将向指定 Telegram 发送通知"
+    echo -e "通知内容：登录用户、来源IP、地理位置、登录时间、主机名"
     echo ""
 
     if [[ -f "$NOTIFY_SCRIPT" ]]; then
@@ -1248,7 +704,7 @@ function task_ssh_notify() {
         -d "parse_mode=HTML" 2>/dev/null)
 
     if [[ "$TEST_RESULT" != "200" ]]; then
-        error "测试消息发送失败 (HTTP $TEST_RESULT)，请检查 Token 和 Chat ID"
+        error "测试消息发送失败 (HTTP $TEST_RESULT)，请检查 Token 和 Chat ID 是否正确"
         read -rp "是否忽略错误仍然保存配置? (y/n): " ignore_err
         [[ "$ignore_err" != "y" ]] && return 1
     else
@@ -1297,30 +753,11 @@ curl -s "https://api.telegram.org/bot\${BOT_TOKEN}/sendMessage" \\
 EOF
 
     chmod +x "$NOTIFY_SCRIPT"
-    touch "$STATE_DIR/ssh_notify_installed"
     success "SSH 登录通知脚本已安装: $NOTIFY_SCRIPT"
+    info "从下次 SSH 登录开始，将自动发送 Telegram 通知"
     echo ""
     echo -e "  如需停用通知: ${YELLOW}rm $NOTIFY_SCRIPT${PLAIN}"
     echo -e "  如需修改配置: ${YELLOW}nano $NOTIFY_SCRIPT${PLAIN}"
-}
-
-function reset_ssh_notify() {
-    header "[重置] 关闭 SSH 登录 Telegram 通知"
-
-    local NOTIFY_SCRIPT="/etc/profile.d/ssh-login-notify.sh"
-
-    if [[ ! -f "$NOTIFY_SCRIPT" ]]; then
-        warn "通知脚本不存在，无需关闭"
-        return
-    fi
-
-    warn "即将删除 SSH 登录通知脚本: $NOTIFY_SCRIPT"
-    read -rp "确认? (y/n): " confirm
-    [[ "$confirm" != "y" ]] && return
-
-    rm -f "$NOTIFY_SCRIPT"
-    rm -f "$STATE_DIR/ssh_notify_installed"
-    success "SSH 登录 Telegram 通知已关闭"
 }
 
 # ---------------------------------------------------------------
@@ -1333,10 +770,6 @@ function task_firewall() {
     apt install -y ufw fail2ban
 
     info "正在配置 Fail2Ban..."
-    # 备份原始配置
-    [[ -f /etc/fail2ban/jail.local ]] && \
-        cp /etc/fail2ban/jail.local "$STATE_DIR/jail.local.orig" 2>/dev/null || true
-
     cat > /etc/fail2ban/jail.local << 'EOF'
 [DEFAULT]
 bantime  = 1h
@@ -1368,7 +801,6 @@ EOF
 
     if [[ "$choice" != "y" ]]; then
         info "已跳过 UFW 配置 (Fail2Ban 继续运行)"
-        touch "$STATE_DIR/firewall_configured"
         return
     fi
 
@@ -1398,47 +830,8 @@ EOF
 
     echo "y" | ufw enable
     ufw status verbose
-    touch "$STATE_DIR/firewall_configured"
     success "UFW 防火墙已启用"
     info "已开放端口: SSH(${SSH_PORT}), HTTP(80), HTTPS(443)"
-}
-
-function reset_firewall() {
-    header "[重置] 关闭防火墙与 Fail2Ban"
-
-    warn "此操作将："
-    warn "  1. 禁用并重置 UFW 防火墙所有规则"
-    warn "  2. 停止并禁用 Fail2Ban 服务"
-    warn "  3. 恢复 fail2ban jail.local 原始配置"
-    read -rp "确认关闭防护? (y/n): " confirm
-    [[ "$confirm" != "y" ]] && return
-
-    # 重置 UFW
-    if command -v ufw &>/dev/null; then
-        ufw --force reset &>/dev/null
-        ufw disable &>/dev/null
-        success "UFW 已禁用并重置所有规则"
-    fi
-
-    # 停止 Fail2Ban
-    if command -v fail2ban-client &>/dev/null; then
-        systemctl stop fail2ban &>/dev/null
-        systemctl disable fail2ban &>/dev/null
-
-        # 恢复原始 jail.local
-        if [[ -f "$STATE_DIR/jail.local.orig" ]]; then
-            cp "$STATE_DIR/jail.local.orig" /etc/fail2ban/jail.local
-            success "Fail2Ban jail.local 已恢复"
-        else
-            rm -f /etc/fail2ban/jail.local
-            info "已移除自定义 jail.local，Fail2Ban 将使用默认配置"
-        fi
-        success "Fail2Ban 已停止"
-    fi
-
-    rm -f "$STATE_DIR/firewall_configured" "$STATE_DIR/jail.local.orig"
-    success "防火墙与入侵防御已全部关闭"
-    warn "服务器当前处于无防火墙状态，请谨慎操作！"
 }
 
 # ---------------------------------------------------------------
@@ -1446,6 +839,13 @@ function reset_firewall() {
 # ---------------------------------------------------------------
 function task_rkhunter() {
     header "[15] Rootkit 检测工具 (rkhunter)"
+
+    echo -e "rkhunter 可检测："
+    echo -e "  • Rootkit / 后门程序"
+    echo -e "  • 可疑的本地文件和二进制文件"
+    echo -e "  • 系统命令是否被替换"
+    echo -e "  • 网络端口、启动文件、日志异常"
+    echo ""
 
     if command -v rkhunter &>/dev/null; then
         warn "rkhunter 已安装: $(rkhunter --version | head -1)"
@@ -1455,20 +855,21 @@ function task_rkhunter() {
         success "rkhunter 安装完成"
     fi
 
-    touch "$STATE_DIR/rkhunter_installed"
-
     info "正在优化 rkhunter 配置..."
     local RKHUNTER_CONF="/etc/rkhunter.conf"
     if [[ -f "$RKHUNTER_CONF" ]]; then
-        [[ ! -f "$STATE_DIR/rkhunter.conf.orig" ]] && \
-            cp "$RKHUNTER_CONF" "$STATE_DIR/rkhunter.conf.orig"
+        cp "$RKHUNTER_CONF" "${RKHUNTER_CONF}.bak.$(date +%F)" 2>/dev/null || true
         sed -i 's|^#SCRIPTWHITELIST=/usr/bin/ldd|SCRIPTWHITELIST=/usr/bin/ldd|' "$RKHUNTER_CONF" 2>/dev/null || true
         sed -i 's|^#WEB_CMD=.*|WEB_CMD=curl|' "$RKHUNTER_CONF" 2>/dev/null || true
         success "rkhunter 配置已优化"
     fi
 
     info "正在更新 rkhunter 数据库..."
-    rkhunter --update --nocolors 2>/dev/null || warn "数据库更新遇到问题，继续执行..."
+    if rkhunter --update --nocolors 2>/dev/null; then
+        success "数据库更新完成"
+    else
+        warn "数据库更新遇到问题 (可能是网络原因)，继续执行..."
+    fi
 
     info "正在建立系统文件属性基线..."
     rkhunter --propupd --nocolors &>/dev/null
@@ -1496,39 +897,15 @@ EOF
         rkhunter --check --nocolors --skip-keypress 2>/dev/null || true
         info "扫描完成，详细日志: /var/log/rkhunter.log"
         warn "出现 Warning 不一定是真实威胁，需结合实际情况判断"
+    else
+        info "已跳过立即扫描，系统将每天凌晨自动执行"
     fi
 
     echo ""
     success "rkhunter 配置完成"
     echo -e "  手动扫描: ${CYAN}rkhunter --check --sk${PLAIN}"
     echo -e "  仅看警告: ${CYAN}rkhunter --check --sk --rwo${PLAIN}"
-}
-
-function reset_rkhunter() {
-    header "[重置] 卸载 rkhunter"
-
-    if ! command -v rkhunter &>/dev/null; then
-        warn "rkhunter 未安装，无需卸载"
-        return
-    fi
-
-    warn "即将卸载 rkhunter 并移除定时扫描任务"
-    read -rp "确认? (y/n): " confirm
-    [[ "$confirm" != "y" ]] && return
-
-    apt remove -y rkhunter
-    apt autoremove -y
-
-    rm -f /etc/cron.daily/rkhunter-scan
-    rm -f /var/log/rkhunter.log
-
-    # 恢复原始配置
-    if [[ -f "$STATE_DIR/rkhunter.conf.orig" ]]; then
-        cp "$STATE_DIR/rkhunter.conf.orig" /etc/rkhunter.conf 2>/dev/null || true
-    fi
-
-    rm -f "$STATE_DIR/rkhunter_installed" "$STATE_DIR/rkhunter.conf.orig"
-    success "rkhunter 已卸载，定时任务已移除"
+    echo -e "  扫描日志: /var/log/rkhunter.log"
 }
 
 # ---------------------------------------------------------------
@@ -1539,11 +916,6 @@ function task_auto_updates() {
 
     info "正在安装 unattended-upgrades..."
     apt install -y unattended-upgrades apt-listchanges
-
-    # 备份原始配置
-    [[ -f /etc/apt/apt.conf.d/50unattended-upgrades ]] && \
-        cp /etc/apt/apt.conf.d/50unattended-upgrades \
-           "$STATE_DIR/50unattended-upgrades.orig" 2>/dev/null || true
 
     cat > /etc/apt/apt.conf.d/50unattended-upgrades << 'EOF'
 Unattended-Upgrade::Allowed-Origins {
@@ -1566,33 +938,7 @@ EOF
 
     systemctl enable unattended-upgrades &>/dev/null
     systemctl restart unattended-upgrades &>/dev/null
-    touch "$STATE_DIR/auto_updates_configured"
     success "自动安全更新已启用 (仅更新安全补丁，不自动重启)"
-}
-
-function reset_auto_updates() {
-    header "[重置] 关闭自动安全更新"
-
-    warn "即将关闭自动安全更新"
-    read -rp "确认? (y/n): " confirm
-    [[ "$confirm" != "y" ]] && return
-
-    systemctl stop unattended-upgrades &>/dev/null
-    systemctl disable unattended-upgrades &>/dev/null
-
-    # 恢复原始配置或直接删除
-    if [[ -f "$STATE_DIR/50unattended-upgrades.orig" ]]; then
-        cp "$STATE_DIR/50unattended-upgrades.orig" \
-           /etc/apt/apt.conf.d/50unattended-upgrades
-        success "已恢复原始 unattended-upgrades 配置"
-    else
-        rm -f /etc/apt/apt.conf.d/50unattended-upgrades
-    fi
-
-    rm -f /etc/apt/apt.conf.d/20auto-upgrades
-    rm -f "$STATE_DIR/auto_updates_configured" \
-          "$STATE_DIR/50unattended-upgrades.orig"
-    success "自动安全更新已关闭"
 }
 
 # ---------------------------------------------------------------
@@ -1601,39 +947,31 @@ function reset_auto_updates() {
 function task_motd() {
     header "[17] MOTD 系统信息美化"
 
-    local MOTD_DIR="/etc/update-motd.d"
-    local MOTD_SCRIPT="$MOTD_DIR/00-custom-info"
+    echo -e "功能说明：SSH 登录后自动显示精美的系统状态信息"
+    echo -e "展示内容：系统信息、CPU/内存/磁盘、负载、网络、安全状态"
+    echo ""
 
     info "正在禁用系统默认 MOTD 组件..."
-
-    # 备份原始 motd 脚本的可执行状态
-    if [[ ! -f "$STATE_DIR/motd_scripts_backed_up" ]]; then
-        mkdir -p "$STATE_DIR/motd_perms"
-        if [[ -d "$MOTD_DIR" ]]; then
-            for f in "$MOTD_DIR"/*; do
-                [[ -f "$f" ]] && [[ -x "$f" ]] && \
-                    echo "$(basename $f)" >> "$STATE_DIR/motd_perms/executable_list.txt"
-            done
-        fi
-        [[ -f /etc/motd ]] && cp /etc/motd "$STATE_DIR/motd.orig"
-        touch "$STATE_DIR/motd_scripts_backed_up"
-        info "已备份原始 MOTD 可执行状态"
-    fi
-
+    local MOTD_DIR="/etc/update-motd.d"
     if [[ -d "$MOTD_DIR" ]]; then
         for f in "$MOTD_DIR"/*; do
-            [[ -f "$f" ]] && [[ "$f" != "$MOTD_SCRIPT" ]] && \
-                chmod -x "$f" 2>/dev/null || true
+            [[ -f "$f" ]] && chmod -x "$f" 2>/dev/null && \
+                info "已禁用: $(basename $f)"
         done
     fi
 
-    [[ -f /etc/motd ]] && > /etc/motd
+    if [[ -f /etc/motd ]]; then
+        cp /etc/motd /etc/motd.bak
+        > /etc/motd
+    fi
 
     sed -i 's/^session\s*optional\s*pam_motd.so.*/#&/' /etc/pam.d/sshd 2>/dev/null || true
     sed -i 's/^session\s*optional\s*pam_motd.so.*/#&/' /etc/pam.d/login 2>/dev/null || true
 
     info "正在安装依赖工具 (figlet)..."
     apt install -y figlet bc 2>/dev/null || true
+
+    local MOTD_SCRIPT="$MOTD_DIR/00-custom-info"
 
     cat > "$MOTD_SCRIPT" << 'MOTD_EOF'
 #!/bin/bash
@@ -1690,6 +1028,7 @@ SWAP_USED=$(free -m | awk '/Swap/{print $3}')
 LAST_LOGIN=$(last -n 2 -F "$USER" 2>/dev/null | grep -v "^$\|still logged" | tail -1)
 FAIL_COUNT=$(grep "Failed password" /var/log/auth.log 2>/dev/null | wc -l || echo "0")
 BANNED_IP_COUNT=$(fail2ban-client status sshd 2>/dev/null | grep "Banned IP" | awk '{print $NF}' || echo "0")
+
 TCP_CC=$(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null || echo "unknown")
 
 function draw_bar() {
@@ -1697,13 +1036,17 @@ function draw_bar() {
     local total=20
     local filled=$((percent * total / 100))
     local empty=$((total - filled))
-    local bar="" color
+    local bar=""
+    local color
+
     if   [[ $percent -lt 50 ]]; then color=$G
     elif [[ $percent -lt 80 ]]; then color=$Y
     else                              color=$R
     fi
+
     for ((i=0; i<filled; i++)); do bar+="█"; done
     for ((i=0; i<empty;  i++)); do bar+="░"; done
+
     echo -e "${color}${bar}${N} ${color}${percent}%${N}"
 }
 
@@ -1716,6 +1059,7 @@ function pct_color() {
 }
 
 echo -e ""
+
 if command -v figlet &>/dev/null; then
     echo -e "${C}$(figlet -f small "  $(hostname -s)" 2>/dev/null || figlet "Server")${N}"
 else
@@ -1725,6 +1069,7 @@ else
 fi
 
 echo -e "${B}  ══════════════════════════════════════════════════════${N}"
+
 echo -e ""
 echo -e "  ${W}🖥  系统信息${N}"
 echo -e "  ${C}主机名  ${N}  ${W}${HOSTNAME}${N}"
@@ -1732,20 +1077,26 @@ echo -e "  ${C}系统    ${N}  ${OS}"
 echo -e "  ${C}内核    ${N}  ${KERNEL} (${ARCH})"
 echo -e "  ${C}运行时间${N}  ${UPTIME_STR}"
 echo -e "  ${C}TCP算法 ${N}  ${TCP_CC}"
+
 echo -e ""
 echo -e "  ${W}🌐  网络信息${N}"
 echo -e "  ${C}公网IP  ${N}  ${W}${PUB_IP}${N}"
 echo -e "  ${C}内网IP  ${N}  ${LOCAL_IP}"
+
 echo -e ""
 echo -e "${B}  ──────────────────────────────────────────────────────${N}"
 echo -e ""
+
 echo -e "  ${W}📊  资源状态${N}"
 echo -e ""
+
 printf "  ${C}%-8s${N}" "CPU"
 echo -e "  ${CPU_MODEL} x${CPU_CORES}核  使用率: $(pct_color $CPU_USAGE)"
+
 printf "  ${C}%-8s${N}" "内存"
 printf "  ${W}%4dMB${N} / ${W}%4dMB${N}  " "$MEM_USED_MB" "$MEM_TOTAL_MB"
 draw_bar "$MEM_PERCENT"
+
 if [[ "$SWAP_TOTAL" -gt 0 ]]; then
     SWAP_PERCENT=$((SWAP_USED * 100 / SWAP_TOTAL))
     printf "  ${C}%-8s${N}" "Swap"
@@ -1754,32 +1105,49 @@ if [[ "$SWAP_TOTAL" -gt 0 ]]; then
 else
     echo -e "  ${C}Swap    ${N}  ${Y}未配置${N}"
 fi
+
 printf "  ${C}%-8s${N}" "磁盘(/)"
 printf "  ${W}%6s${N} / ${W}%6s${N}  剩余: ${W}%s${N}  " "$DISK_USED" "$DISK_TOTAL" "$DISK_AVAIL"
 draw_bar "$DISK_PERCENT"
+
 echo -e ""
 echo -e "  ${C}系统负载${N}  ${LOAD_1} (1min)  ${LOAD_5} (5min)  ${LOAD_15} (15min)  进程数: ${PROCESS_COUNT}"
+
 echo -e ""
 echo -e "${B}  ──────────────────────────────────────────────────────${N}"
 echo -e ""
+
 echo -e "  ${W}🔐  安全状态${N}"
 echo -e ""
-if [[ "$FAIL_COUNT" -gt 100 ]]; then FC=$R
-elif [[ "$FAIL_COUNT" -gt 20 ]]; then FC=$Y
-else FC=$G; fi
-echo -e "  ${C}SSH失败次数${N}    ${FC}${FAIL_COUNT} 次${N}  (来自 /var/log/auth.log)"
+
+if [[ "$FAIL_COUNT" -gt 100 ]]; then
+    FAIL_COLOR=$R
+elif [[ "$FAIL_COUNT" -gt 20 ]]; then
+    FAIL_COLOR=$Y
+else
+    FAIL_COLOR=$G
+fi
+echo -e "  ${C}SSH失败次数${N}    ${FAIL_COLOR}${FAIL_COUNT} 次${N}  (来自 /var/log/auth.log)"
+
 if command -v fail2ban-client &>/dev/null && systemctl is-active --quiet fail2ban 2>/dev/null; then
-    echo -e "  ${C}Fail2Ban封禁${N}   ${Y}${BANNED_IP_COUNT} 个IP${N}"
+    echo -e "  ${C}Fail2Ban封禁${N}   ${Y}${BANNED_IP_COUNT} 个IP${N}  (当前已封禁)"
 else
     echo -e "  ${C}Fail2Ban    ${N}   ${Y}未运行${N}"
 fi
+
 if command -v ufw &>/dev/null; then
     UFW_STATUS=$(ufw status 2>/dev/null | head -1 | awk '{print $2}')
-    [[ "$UFW_STATUS" == "active" ]] && \
-        echo -e "  ${C}防火墙UFW   ${N}   ${G}已启用${N}" || \
+    if [[ "$UFW_STATUS" == "active" ]]; then
+        echo -e "  ${C}防火墙UFW   ${N}   ${G}已启用${N}"
+    else
         echo -e "  ${C}防火墙UFW   ${N}   ${Y}未启用${N}"
+    fi
 fi
-[[ -n "$LAST_LOGIN" ]] && echo -e "  ${C}上次登录    ${N}   ${LAST_LOGIN}"
+
+if [[ -n "$LAST_LOGIN" ]]; then
+    echo -e "  ${C}上次登录    ${N}   ${LAST_LOGIN}"
+fi
+
 echo -e ""
 echo -e "${B}  ══════════════════════════════════════════════════════${N}"
 echo -e "  ${Y}  $(date '+%Y-%m-%d %H:%M:%S %Z')${N}"
@@ -1789,65 +1157,34 @@ MOTD_EOF
 
     chmod +x "$MOTD_SCRIPT"
 
-    grep -qE "^#?PrintMotd" /etc/ssh/sshd_config && \
-        sed -i 's/^#\?PrintMotd.*/PrintMotd yes/' /etc/ssh/sshd_config || \
+    if grep -qE "^#?PrintMotd" /etc/ssh/sshd_config; then
+        sed -i 's/^#\?PrintMotd.*/PrintMotd yes/' /etc/ssh/sshd_config
+    else
         echo "PrintMotd yes" >> /etc/ssh/sshd_config
+    fi
 
-    grep -qE "^#?PrintLastLog" /etc/ssh/sshd_config && \
-        sed -i 's/^#\?PrintLastLog.*/PrintLastLog no/' /etc/ssh/sshd_config || \
+    if grep -qE "^#?PrintLastLog" /etc/ssh/sshd_config; then
+        sed -i 's/^#\?PrintLastLog.*/PrintLastLog no/' /etc/ssh/sshd_config
+    else
         echo "PrintLastLog no" >> /etc/ssh/sshd_config
+    fi
 
-    sshd -t 2>/dev/null && systemctl restart sshd
+    if sshd -t 2>/dev/null; then
+        systemctl restart sshd
+    fi
 
     echo ""
     read -rp "是否立即预览 MOTD 效果? (y/n): " preview
-    [[ "$preview" == "y" ]] && bash "$MOTD_SCRIPT"
+    if [[ "$preview" == "y" ]]; then
+        echo ""
+        bash "$MOTD_SCRIPT"
+    fi
 
-    touch "$STATE_DIR/motd_customized"
     success "MOTD 美化配置完成"
-    echo -e "  MOTD脚本: ${CYAN}$MOTD_SCRIPT${PLAIN}"
-    echo -e "  修改:     ${YELLOW}nano $MOTD_SCRIPT${PLAIN}"
-    echo -e "  预览:     ${YELLOW}bash $MOTD_SCRIPT${PLAIN}"
-}
-
-function reset_motd() {
-    header "[重置] 恢复默认 MOTD"
-
-    if [[ ! -f "$STATE_DIR/motd_scripts_backed_up" ]]; then
-        warn "未找到 MOTD 备份记录"
-        return
-    fi
-
-    warn "即将移除自定义 MOTD，恢复系统默认登录信息"
-    read -rp "确认? (y/n): " confirm
-    [[ "$confirm" != "y" ]] && return
-
-    # 删除自定义脚本
-    rm -f /etc/update-motd.d/00-custom-info
-
-    # 恢复原始脚本的可执行权限
-    if [[ -f "$STATE_DIR/motd_perms/executable_list.txt" ]]; then
-        while read -r script_name; do
-            local script_path="/etc/update-motd.d/$script_name"
-            [[ -f "$script_path" ]] && chmod +x "$script_path"
-        done < "$STATE_DIR/motd_perms/executable_list.txt"
-        success "已恢复原始 MOTD 脚本的可执行权限"
-    fi
-
-    # 恢复 /etc/motd
-    if [[ -f "$STATE_DIR/motd.orig" ]]; then
-        cp "$STATE_DIR/motd.orig" /etc/motd
-    fi
-
-    # 恢复 PAM motd 配置
-    sed -i 's/^#\(session.*pam_motd\.so\)/\1/' /etc/pam.d/sshd 2>/dev/null || true
-    sed -i 's/^#\(session.*pam_motd\.so\)/\1/' /etc/pam.d/login 2>/dev/null || true
-
-    rm -f "$STATE_DIR/motd_customized" "$STATE_DIR/motd_scripts_backed_up" \
-          "$STATE_DIR/motd.orig" "$STATE_DIR/motd_perms/executable_list.txt"
-    rmdir "$STATE_DIR/motd_perms" 2>/dev/null || true
-
-    success "MOTD 已恢复为系统默认"
+    echo -e "  MOTD脚本路径: ${CYAN}$MOTD_SCRIPT${PLAIN}"
+    echo -e "  修改MOTD:     ${YELLOW}nano $MOTD_SCRIPT${PLAIN}"
+    echo -e "  立即预览:     ${YELLOW}bash $MOTD_SCRIPT${PLAIN}"
+    echo -e "  恢复默认:     ${YELLOW}chmod +x /etc/update-motd.d/*${PLAIN}"
 }
 
 # ---------------------------------------------------------------
@@ -1855,6 +1192,15 @@ function reset_motd() {
 # ---------------------------------------------------------------
 function task_zsh() {
     header "[18] ZSH + 插件环境"
+
+    echo -e "将安装以下内容："
+    echo -e "  • ${GREEN}Zsh${PLAIN}                    现代化 Shell"
+    echo -e "  • ${GREEN}Oh-My-Zsh${PLAIN}              Zsh 配置管理框架"
+    echo -e "  • ${GREEN}zsh-autosuggestions${PLAIN}    命令自动补全建议"
+    echo -e "  • ${GREEN}zsh-syntax-highlighting${PLAIN} 命令语法高亮"
+    echo -e "  • ${GREEN}zsh-completions${PLAIN}        增强 Tab 补全"
+    echo -e "  • ${GREEN}自定义 Alias${PLAIN}           常用命令别名"
+    echo ""
 
     if ! command -v zsh &>/dev/null; then
         info "正在安装 Zsh..."
@@ -1864,7 +1210,10 @@ function task_zsh() {
         success "Zsh 已安装: $(zsh --version)"
     fi
 
-    ! command -v git &>/dev/null && apt install -y git
+    if ! command -v git &>/dev/null; then
+        info "正在安装 git..."
+        apt install -y git
+    fi
 
     echo ""
     echo -e "请选择为哪个用户安装 ZSH 环境："
@@ -1874,34 +1223,48 @@ function task_zsh() {
     read -rp "请输入选择 [1-3]: " user_choice
 
     declare -a TARGET_USERS=()
+
     case "$user_choice" in
         1) TARGET_USERS=("root") ;;
         2)
             read -rp "请输入用户名: " target_user
-            id "$target_user" &>/dev/null || { error "用户 '$target_user' 不存在"; return 1; }
+            if ! id "$target_user" &>/dev/null; then
+                error "用户 '$target_user' 不存在"
+                return 1
+            fi
             TARGET_USERS=("$target_user")
             ;;
         3)
             read -rp "请输入普通用户名: " target_user
-            id "$target_user" &>/dev/null || { error "用户 '$target_user' 不存在"; return 1; }
+            if ! id "$target_user" &>/dev/null; then
+                error "用户 '$target_user' 不存在"
+                return 1
+            fi
             TARGET_USERS=("root" "$target_user")
             ;;
-        *) warn "无效选择，默认仅安装到 root"; TARGET_USERS=("root") ;;
+        *)
+            warn "无效选择，默认仅安装到 root"
+            TARGET_USERS=("root")
+            ;;
     esac
 
     for INSTALL_USER in "${TARGET_USERS[@]}"; do
-        [[ "$INSTALL_USER" == "root" ]] && USER_HOME="/root" || \
+
+        if [[ "$INSTALL_USER" == "root" ]]; then
+            USER_HOME="/root"
+        else
             USER_HOME=$(getent passwd "$INSTALL_USER" | cut -d: -f6)
+        fi
 
         print_line
         info "正在为用户 ${BOLD}${INSTALL_USER}${PLAIN} 安装 ZSH 环境..."
+        info "家目录: $USER_HOME"
 
         local OMZ_DIR="$USER_HOME/.oh-my-zsh"
 
-        # 记录安装目标
-        echo "$INSTALL_USER:$USER_HOME" >> "$STATE_DIR/zsh_installed_users.txt"
-
-        if [[ ! -d "$OMZ_DIR" ]]; then
+        if [[ -d "$OMZ_DIR" ]]; then
+            warn "Oh-My-Zsh 已存在于 $OMZ_DIR，跳过安装"
+        else
             info "正在安装 Oh-My-Zsh..."
             if [[ "$INSTALL_USER" == "root" ]]; then
                 env RUNZSH=no CHSH=no \
@@ -1914,36 +1277,64 @@ function task_zsh() {
                 sudo -u "$INSTALL_USER" env RUNZSH=no CHSH=no HOME="$USER_HOME" \
                     sh -c "$(curl -fsSL https://gitee.com/mirrors/oh-my-zsh/raw/master/tools/install.sh)"
             fi
-            [[ -d "$OMZ_DIR" ]] && success "Oh-My-Zsh 安装完成" || { error "Oh-My-Zsh 安装失败"; continue; }
-        else
-            warn "Oh-My-Zsh 已存在，跳过安装"
+
+            if [[ -d "$OMZ_DIR" ]]; then
+                success "Oh-My-Zsh 安装完成"
+            else
+                error "Oh-My-Zsh 安装失败，请检查网络"
+                continue
+            fi
         fi
 
         local ZSH_CUSTOM="$OMZ_DIR/custom"
 
-        for plugin_info in \
-            "zsh-autosuggestions:https://github.com/zsh-users/zsh-autosuggestions:https://gitee.com/mirrors/zsh-autosuggestions" \
-            "zsh-syntax-highlighting:https://github.com/zsh-users/zsh-syntax-highlighting:https://gitee.com/mirrors/zsh-syntax-highlighting" \
-            "zsh-completions:https://github.com/zsh-users/zsh-completions:"; do
+        local AUTOSUGGEST_DIR="$ZSH_CUSTOM/plugins/zsh-autosuggestions"
+        if [[ ! -d "$AUTOSUGGEST_DIR" ]]; then
+            info "正在安装 zsh-autosuggestions..."
+            git clone --depth=1 \
+                https://github.com/zsh-users/zsh-autosuggestions \
+                "$AUTOSUGGEST_DIR" 2>/dev/null || \
+            git clone --depth=1 \
+                https://gitee.com/mirrors/zsh-autosuggestions \
+                "$AUTOSUGGEST_DIR" 2>/dev/null
+            success "zsh-autosuggestions 安装完成"
+        else
+            warn "zsh-autosuggestions 已存在，跳过"
+        fi
 
-            local plugin_name="${plugin_info%%:*}"
-            local rest="${plugin_info#*:}"
-            local primary_url="${rest%%:*}"
-            local fallback_url="${rest##*:}"
-            local plugin_dir="$ZSH_CUSTOM/plugins/$plugin_name"
+        local SYNTAX_DIR="$ZSH_CUSTOM/plugins/zsh-syntax-highlighting"
+        if [[ ! -d "$SYNTAX_DIR" ]]; then
+            info "正在安装 zsh-syntax-highlighting..."
+            git clone --depth=1 \
+                https://github.com/zsh-users/zsh-syntax-highlighting \
+                "$SYNTAX_DIR" 2>/dev/null || \
+            git clone --depth=1 \
+                https://gitee.com/mirrors/zsh-syntax-highlighting \
+                "$SYNTAX_DIR" 2>/dev/null
+            success "zsh-syntax-highlighting 安装完成"
+        else
+            warn "zsh-syntax-highlighting 已存在，跳过"
+        fi
 
-            if [[ ! -d "$plugin_dir" ]]; then
-                info "正在安装 $plugin_name..."
-                git clone --depth=1 "$primary_url" "$plugin_dir" 2>/dev/null || \
-                    { [[ -n "$fallback_url" ]] && git clone --depth=1 "$fallback_url" "$plugin_dir" 2>/dev/null; }
-                [[ -d "$plugin_dir" ]] && success "$plugin_name 安装完成" || warn "$plugin_name 安装失败，跳过"
-            else
-                warn "$plugin_name 已存在，跳过"
-            fi
-        done
+        local COMPLETIONS_DIR="$ZSH_CUSTOM/plugins/zsh-completions"
+        if [[ ! -d "$COMPLETIONS_DIR" ]]; then
+            info "正在安装 zsh-completions..."
+            git clone --depth=1 \
+                https://github.com/zsh-users/zsh-completions \
+                "$COMPLETIONS_DIR" 2>/dev/null || true
+            success "zsh-completions 安装完成"
+        else
+            warn "zsh-completions 已存在，跳过"
+        fi
 
         local ZSHRC="$USER_HOME/.zshrc"
-        [[ -f "$ZSHRC" ]] && cp "$ZSHRC" "${ZSHRC}.bak.$(date +%F_%H%M%S)" && info "已备份原 .zshrc"
+
+        if [[ -f "$ZSHRC" ]]; then
+            cp "$ZSHRC" "${ZSHRC}.bak.$(date +%F_%H%M%S)"
+            info "已备份原 .zshrc"
+        fi
+
+        info "正在写入 .zshrc 配置..."
 
         cat > "$ZSHRC" << ZSHRC_EOF
 # ==============================================================
@@ -1951,6 +1342,7 @@ function task_zsh() {
 # ==============================================================
 
 export ZSH="\$HOME/.oh-my-zsh"
+
 ZSH_THEME="ys"
 
 zstyle ':omz:update' mode reminder
@@ -1970,14 +1362,24 @@ plugins=(
 
 source "\$ZSH/oh-my-zsh.sh"
 
+# ==============================================================
+#  环境变量
+# ==============================================================
 export LANG=en_US.UTF-8
 export EDITOR='vim'
 export HISTSIZE=10000
 export HISTFILESIZE=10000
 export HISTCONTROL=ignoredups:erasedups
 
+# ==============================================================
+#  自动补全颜色
+# ==============================================================
 ZSH_AUTOSUGGEST_HIGHLIGHT_STYLE='fg=8'
 ZSH_AUTOSUGGEST_STRATEGY=(history completion)
+
+# ==============================================================
+#  实用 Alias
+# ==============================================================
 
 # --- 系统操作 ---
 alias ll='ls -alFh --color=auto'
@@ -1997,6 +1399,8 @@ alias du='du -sh'
 alias free='free -mh'
 alias ps='ps auxf'
 alias grep='grep --color=auto'
+alias fgrep='fgrep --color=auto'
+alias egrep='egrep --color=auto'
 alias diff='diff --color=auto'
 alias tree='tree -C'
 
@@ -2011,6 +1415,7 @@ alias netstat='ss -tulnp'
 alias top='htop'
 alias mem='free -mh'
 alias disk='df -hT'
+alias cpu='top -bn1 | grep "Cpu(s)"'
 alias load='cat /proc/loadavg'
 alias psg='ps aux | grep -v grep | grep -i'
 
@@ -2035,6 +1440,11 @@ alias dkps='docker ps'
 alias dkpsa='docker ps -a'
 alias dklogs='docker logs -f'
 alias dkexec='docker exec -it'
+alias dkstop='docker stop'
+alias dkrm='docker rm'
+alias dkrmi='docker rmi'
+alias dkpull='docker pull'
+alias dkcp='docker-compose'
 alias dkup='docker-compose up -d'
 alias dkdown='docker-compose down'
 alias dkrestart='docker-compose restart'
@@ -2046,6 +1456,8 @@ alias gc='git commit -m'
 alias gp='git push'
 alias gl='git log --oneline --graph --decorate --all'
 alias gd='git diff'
+alias gb='git branch'
+alias gco='git checkout'
 
 # --- 安全相关 ---
 alias f2b='fail2ban-client status'
@@ -2054,123 +1466,100 @@ alias ufws='ufw status verbose'
 alias lastlog='last -n 20'
 alias whofail='grep "Failed password" /var/log/auth.log | tail -20'
 
-# --- 实用函数 ---
+# ==============================================================
+#  实用函数
+# ==============================================================
+
 extract() {
     if [[ -f "\$1" ]]; then
         case "\$1" in
-            *.tar.bz2)  tar xjf "\$1"    ;;
-            *.tar.gz)   tar xzf "\$1"    ;;
-            *.tar.xz)   tar xJf "\$1"    ;;
-            *.bz2)      bunzip2 "\$1"    ;;
-            *.gz)       gunzip "\$1"     ;;
-            *.tar)      tar xf "\$1"     ;;
-            *.zip)      unzip "\$1"      ;;
-            *.7z)       7z x "\$1"       ;;
-            *)          echo "无法识别的格式: \$1" ;;
+            *.tar.bz2)  tar xjf "\$1"     ;;
+            *.tar.gz)   tar xzf "\$1"     ;;
+            *.tar.xz)   tar xJf "\$1"     ;;
+            *.tar.zst)  tar xaf "\$1"     ;;
+            *.bz2)      bunzip2 "\$1"     ;;
+            *.rar)      unrar x "\$1"     ;;
+            *.gz)       gunzip "\$1"      ;;
+            *.tar)      tar xf "\$1"      ;;
+            *.tbz2)     tar xjf "\$1"     ;;
+            *.tgz)      tar xzf "\$1"     ;;
+            *.zip)      unzip "\$1"       ;;
+            *.Z)        uncompress "\$1"  ;;
+            *.7z)       7z x "\$1"        ;;
+            *)          echo "'$1' 无法识别的压缩格式" ;;
         esac
     else
-        echo "文件不存在: \$1"
+        echo "'$1' 不是一个有效文件"
     fi
 }
 
 port()  { ss -tulnp | grep ":\${1}" ; }
 mkcd()  { mkdir -p "\$1" && cd "\$1" ; }
 hist()  { history | grep "\$1" ; }
+ipinfo(){ curl -s "https://ipinfo.io/\${1:-}" | python3 -m json.tool 2>/dev/null || curl -s "https://ipinfo.io/\${1:-}" ; }
 bak()   { cp "\$1" "\${1}.bak.\$(date +%Y%m%d%H%M%S)" ; }
-ipinfo(){ curl -s "https://ipinfo.io/\${1:-}" | python3 -m json.tool 2>/dev/null || curl -s "https://ipinfo.io/\${1:-}"; }
 
+# ==============================================================
+#  补全与历史优化
+# ==============================================================
 zstyle ':completion:*' matcher-list 'm:{a-zA-Z}={A-Za-z}'
 zstyle ':completion:*' menu select
 
-setopt SHARE_HISTORY HIST_IGNORE_ALL_DUPS HIST_SAVE_NO_DUPS HIST_REDUCE_BLANKS
+setopt SHARE_HISTORY
+setopt HIST_IGNORE_ALL_DUPS
+setopt HIST_SAVE_NO_DUPS
+setopt HIST_REDUCE_BLANKS
 
 stty -ixon 2>/dev/null || true
 
 autoload -U compinit && compinit
 ZSHRC_EOF
 
-        [[ "$INSTALL_USER" != "root" ]] && \
-            chown -R "$INSTALL_USER:$INSTALL_USER" "$ZSHRC" "$OMZ_DIR" 2>/dev/null || true
+        if [[ "$INSTALL_USER" != "root" ]]; then
+            chown "$INSTALL_USER:$INSTALL_USER" "$ZSHRC"
+            chown -R "$INSTALL_USER:$INSTALL_USER" "$OMZ_DIR" 2>/dev/null || true
+        fi
 
         success "用户 $INSTALL_USER 的 .zshrc 配置完成"
 
         local ZSH_PATH
         ZSH_PATH=$(command -v zsh)
-        grep -qx "$ZSH_PATH" /etc/shells || echo "$ZSH_PATH" >> /etc/shells
+
+        if ! grep -qx "$ZSH_PATH" /etc/shells; then
+            echo "$ZSH_PATH" >> /etc/shells
+            info "已将 $ZSH_PATH 添加到 /etc/shells"
+        fi
 
         echo ""
         read -rp "是否将 $INSTALL_USER 的默认 Shell 切换为 Zsh? (y/n): " change_shell
         if [[ "$change_shell" == "y" ]]; then
-            # 记录原始 Shell
-            local orig_shell
-            orig_shell=$(getent passwd "$INSTALL_USER" | cut -d: -f7)
-            echo "$INSTALL_USER:$orig_shell" >> "$STATE_DIR/zsh_original_shells.txt"
-
-            chsh -s "$ZSH_PATH" "$INSTALL_USER" && \
-                success "用户 $INSTALL_USER 默认 Shell 已切换为 Zsh (重新登录后生效)" || \
-                error "切换失败，请手动: chsh -s $ZSH_PATH $INSTALL_USER"
-        fi
-    done
-
-    echo ""
-    success "ZSH 环境安装完成"
-    echo -e "  立即生效: ${YELLOW}exec zsh${PLAIN}"
-    echo -e "  修改配置: ${YELLOW}nano ~/.zshrc && source ~/.zshrc${PLAIN}"
-    echo -e "  快捷键:   → 接受补全  |  Tab 补全菜单  |  ESC×2 加sudo"
-}
-
-function reset_zsh() {
-    header "[重置] 卸载 ZSH 环境"
-
-    if [[ ! -f "$STATE_DIR/zsh_installed_users.txt" ]]; then
-        warn "未找到 ZSH 安装记录"
-        return
-    fi
-
-    echo -e "已安装 ZSH 的用户:"
-    cat "$STATE_DIR/zsh_installed_users.txt" | cut -d: -f1 | while read -r u; do
-        echo -e "  ${GREEN}$u${PLAIN}"
-    done
-    echo ""
-
-    warn "即将为以上所有用户卸载 Oh-My-Zsh，恢复原始 Shell 和 .zshrc"
-    read -rp "确认? (y/n): " confirm
-    [[ "$confirm" != "y" ]] && return
-
-    while IFS=: read -r INSTALL_USER USER_HOME; do
-        print_line
-        info "正在为用户 $INSTALL_USER 卸载 ZSH 环境..."
-
-        # 删除 Oh-My-Zsh
-        [[ -d "$USER_HOME/.oh-my-zsh" ]] && rm -rf "$USER_HOME/.oh-my-zsh" && \
-            success "已删除 $USER_HOME/.oh-my-zsh"
-
-        # 恢复 .zshrc 备份（取最旧的备份）
-        local oldest_zshrc_bak
-        oldest_zshrc_bak=$(ls -t "$USER_HOME"/.zshrc.bak.* 2>/dev/null | tail -1)
-        if [[ -n "$oldest_zshrc_bak" ]]; then
-            cp "$oldest_zshrc_bak" "$USER_HOME/.zshrc"
-            success "已恢复原始 .zshrc: $oldest_zshrc_bak"
-        else
-            rm -f "$USER_HOME/.zshrc"
-            info "已删除 .zshrc（无历史备份）"
-        fi
-
-        # 恢复原始 Shell
-        if [[ -f "$STATE_DIR/zsh_original_shells.txt" ]]; then
-            local orig_shell
-            orig_shell=$(grep "^${INSTALL_USER}:" "$STATE_DIR/zsh_original_shells.txt" | cut -d: -f2)
-            if [[ -n "$orig_shell" ]] && [[ -f "$orig_shell" ]]; then
-                chsh -s "$orig_shell" "$INSTALL_USER" && \
-                    success "用户 $INSTALL_USER 的 Shell 已恢复为: $orig_shell"
+            if chsh -s "$ZSH_PATH" "$INSTALL_USER"; then
+                success "用户 $INSTALL_USER 的默认 Shell 已切换为 Zsh"
+                warn "需要重新登录后生效"
+            else
+                error "切换 Shell 失败，请手动执行: chsh -s $ZSH_PATH $INSTALL_USER"
             fi
+        else
+            info "保持原有 Shell，可手动切换: chsh -s $ZSH_PATH $INSTALL_USER"
         fi
 
-    done < "$STATE_DIR/zsh_installed_users.txt"
+        info "也可在当前会话临时使用: ${CYAN}exec zsh${PLAIN}"
+    done
 
-    rm -f "$STATE_DIR/zsh_installed_users.txt" \
-          "$STATE_DIR/zsh_original_shells.txt"
-    success "ZSH 环境已卸载完成"
+    echo ""
+    success "ZSH 环境安装完成，摘要："
+    echo -e "  Zsh版本:   $(zsh --version)"
+    echo -e "  主题:      ${CYAN}ys${PLAIN} (可在 .zshrc 中修改 ZSH_THEME)"
+    echo -e "  已装插件:  ${CYAN}autosuggestions / syntax-highlighting / completions${PLAIN}"
+    echo -e ""
+    echo -e "  ${YELLOW}快捷键提示:${PLAIN}"
+    echo -e "   ${CYAN}→ 方向键${PLAIN}   接受自动补全建议"
+    echo -e "   ${CYAN}Tab${PLAIN}        触发命令补全菜单"
+    echo -e "   ${CYAN}Ctrl+R${PLAIN}     历史命令搜索"
+    echo -e "   ${CYAN}ESC ESC${PLAIN}    在命令前加 sudo (sudo 插件)"
+    echo -e ""
+    echo -e "  立即生效:  ${YELLOW}exec zsh${PLAIN}"
+    echo -e "  修改配置:  ${YELLOW}nano ~/.zshrc && source ~/.zshrc${PLAIN}"
 }
 
 # ---------------------------------------------------------------
@@ -2178,117 +1567,48 @@ function reset_zsh() {
 # ---------------------------------------------------------------
 function task_all() {
     header "一键全流程初始化"
-    warn "将依次执行所有基础配置任务"
+    warn "将依次执行以下任务："
+    echo -e "  软件源 → 基础工具 → 主机名 → 时区 → BBR"
+    echo -e "  → Swap → 内核优化 → 创建用户 → SSH密钥"
+    echo -e "  → SSH端口 → 防火墙 → rkhunter → 自动更新"
+    echo -e "  → MOTD美化 → ZSH环境"
+    echo ""
     read -rp "确认开始? (y/n): " confirm
     [[ "$confirm" != "y" ]] && return
 
-    task_source; task_essentials; task_hostname; task_timezone
-    task_bbr; task_swap; task_sysctl; task_create_user
-    task_ssh; task_ssh_port; task_firewall; task_rkhunter
-    task_auto_updates; task_motd; task_zsh
+    task_source
+    task_essentials
+    task_hostname
+    task_timezone
+    task_bbr
+    task_swap
+    task_sysctl
+    task_create_user
+    task_ssh
+    task_ssh_port
+    task_firewall
+    task_rkhunter
+    task_auto_updates
+    task_motd
+    task_zsh
 
     header "🎉 基础初始化完成"
     success "所有基础任务已执行完毕！"
     print_line
 
-    read -rp "是否配置 SSH 登录 Telegram 通知? (y/n): " n
-    [[ "$n" == "y" ]] && task_ssh_notify
+    read -rp "是否配置 SSH 登录 Telegram 通知? (y/n): " notify
+    [[ "$notify" == "y" ]] && task_ssh_notify
 
-    read -rp "是否安装 Docker? (y/n): " d
-    [[ "$d" == "y" ]] && task_docker
+    read -rp "是否安装 Docker? (y/n): " install_docker
+    [[ "$install_docker" == "y" ]] && task_docker
 
-    read -rp "是否安装 1Panel 面板? (y/n): " p
-    [[ "$p" == "y" ]] && task_1panel
+    read -rp "是否安装 1Panel 面板? (y/n): " install_panel
+    [[ "$install_panel" == "y" ]] && task_1panel
 
     print_line
     echo -e "${YELLOW}  建议重启服务器以确保所有内核参数完全生效${PLAIN}"
     read -rp "是否立即重启? (y/n): " reboot_now
     [[ "$reboot_now" == "y" ]] && reboot
-}
-
-# ==============================================================
-#  重置/回退 子菜单
-# ==============================================================
-function show_reset_menu() {
-    while true; do
-        clear
-        echo -e "${RED}=============================================================${PLAIN}"
-        echo -e "${BOLD}              ⚠️   重置 / 回退操作中心                    ${PLAIN}"
-        echo -e "${RED}=============================================================${PLAIN}"
-        echo -e ""
-        echo -e "  ${YELLOW}所有重置操作均不可撤销，请谨慎操作！${PLAIN}"
-        echo -e ""
-        echo -e " ${CYAN}[ 系统基础 ]${PLAIN}"
-        echo -e "   ${RED}r1.${PLAIN}  恢复原始软件源"
-        echo -e "   ${RED}r2.${PLAIN}  卸载基础软件包"
-        echo -e "   ${RED}r3.${PLAIN}  恢复原始时区"
-        echo -e "   ${RED}r4.${PLAIN}  关闭 TCP BBR"
-        echo -e "   ${RED}r5.${PLAIN}  关闭并删除 Swap"
-        echo -e "   ${RED}r6.${PLAIN}  恢复原始主机名"
-        echo -e "   ${RED}r7.${PLAIN}  移除内核参数优化"
-        echo -e ""
-        echo -e " ${CYAN}[ 软件应用 ]${PLAIN}"
-        echo -e "   ${RED}r8.${PLAIN}  卸载 Docker"
-        echo -e "   ${RED}r9.${PLAIN}  卸载 1Panel"
-        echo -e ""
-        echo -e " ${CYAN}[ 安全加固 ]${PLAIN}"
-        echo -e "   ${RED}r10.${PLAIN} 删除创建的用户"
-        echo -e "   ${RED}r11.${PLAIN} 恢复 SSH 原始配置 ${YELLOW}(重新开启密码登录)${PLAIN}"
-        echo -e "   ${RED}r12.${PLAIN} 恢复原始 SSH 端口"
-        echo -e "   ${RED}r13.${PLAIN} 关闭 SSH Telegram 通知"
-        echo -e "   ${RED}r14.${PLAIN} 关闭防火墙与 Fail2Ban"
-        echo -e "   ${RED}r15.${PLAIN} 卸载 rkhunter"
-        echo -e "   ${RED}r16.${PLAIN} 关闭自动安全更新"
-        echo -e ""
-        echo -e " ${CYAN}[ 体验优化 ]${PLAIN}"
-        echo -e "   ${RED}r17.${PLAIN} 恢复默认 MOTD"
-        echo -e "   ${RED}r18.${PLAIN} 卸载 ZSH 环境"
-        echo -e ""
-        echo -e " ${CYAN}[ 其他 ]${PLAIN}"
-        echo -e "   ${GREEN}cache.${PLAIN} 清空本地脚本缓存"
-        echo -e "   ${GREEN}state.${PLAIN} 查看已保存的状态信息"
-        echo -e ""
-        echo -e "${RED}-------------------------------------------------------------${PLAIN}"
-        echo -e "   ${GREEN}b.${PLAIN}   返回主菜单"
-        echo -e "${RED}=============================================================${PLAIN}"
-        echo -e ""
-
-        read -rp " 请输入重置选项: " choice
-        echo ""
-
-        case "$choice" in
-            r1)   reset_source ;;
-            r2)   reset_essentials ;;
-            r3)   reset_timezone ;;
-            r4)   reset_bbr ;;
-            r5)   reset_swap ;;
-            r6)   reset_hostname ;;
-            r7)   reset_sysctl ;;
-            r8)   reset_docker ;;
-            r9)   reset_1panel ;;
-            r10)  reset_create_user ;;
-            r11)  reset_ssh ;;
-            r12)  reset_ssh_port ;;
-            r13)  reset_ssh_notify ;;
-            r14)  reset_firewall ;;
-            r15)  reset_rkhunter ;;
-            r16)  reset_auto_updates ;;
-            r17)  reset_motd ;;
-            r18)  reset_zsh ;;
-            cache) clear_cache ;;
-            state)
-                echo -e "${CYAN}已保存的状态文件列表:${PLAIN}"
-                ls -lh "$STATE_DIR"/ 2>/dev/null || echo "  (空)"
-                echo -e "${CYAN}脚本缓存文件列表:${PLAIN}"
-                ls -lh "$CACHE_DIR"/ 2>/dev/null || echo "  (空)"
-                ;;
-            b|B) return ;;
-            *) error "无效输入: '$choice'" ;;
-        esac
-
-        echo ""
-        read -rp " 按回车键继续..."
-    done
 }
 
 # ==============================================================
@@ -2298,7 +1618,7 @@ function show_menu() {
     while true; do
         clear
         echo -e "${BLUE}=============================================================${PLAIN}"
-        echo -e "${BOLD}          🚀  Linux 服务器初始化助手  (Pro V8)           ${PLAIN}"
+        echo -e "${BOLD}          🚀  Linux 服务器初始化助手  (Pro V7)           ${PLAIN}"
         echo -e "${BLUE}=============================================================${PLAIN}"
         show_sysinfo
         echo -e "${BLUE}-------------------------------------------------------------${PLAIN}"
@@ -2326,12 +1646,11 @@ function show_menu() {
         echo -e "   ${GREEN}16.${PLAIN}  配置自动安全更新"
         echo -e ""
         echo -e " ${CYAN}[ 体验优化 ]${PLAIN}"
-        echo -e "   ${GREEN}17.${PLAIN}  MOTD 系统信息美化"
+        echo -e "   ${GREEN}17.${PLAIN}  MOTD 系统信息美化 ${CYAN}(登录后显示系统状态)${PLAIN}"
         echo -e "   ${GREEN}18.${PLAIN}  ZSH + 插件环境 ${CYAN}(Oh-My-Zsh / 补全 / 高亮)${PLAIN}"
         echo -e ""
         echo -e "${BLUE}-------------------------------------------------------------${PLAIN}"
         echo -e "   ${GREEN}0.${PLAIN}   ${BOLD}一键执行全部基础配置${PLAIN}"
-        echo -e "   ${RED}r.${PLAIN}   ${BOLD}重置 / 回退操作中心${PLAIN}"
         echo -e "   ${GREEN}q.${PLAIN}   退出脚本"
         echo -e "${BLUE}=============================================================${PLAIN}"
         echo -e ""
@@ -2359,8 +1678,10 @@ function show_menu() {
             17)  task_motd ;;
             18)  task_zsh ;;
             0)   task_all ;;
-            r|R) show_reset_menu ;;
-            q|Q) success "已退出脚本"; exit 0 ;;
+            q|Q)
+                success "已退出脚本"
+                exit 0
+                ;;
             *)   error "无效输入: '$choice'，请重新选择" ;;
         esac
 
