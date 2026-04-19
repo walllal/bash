@@ -8,7 +8,7 @@ RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[0;33m'
 BLUE='\033[0;34m'; PURPLE='\033[0;35m'; CYAN='\033[0;36m'
 PLAIN='\033[0m';   BOLD='\033[1m'
 
-BASE_URL="https://raw.githubusercontent.com/walllal/bash/refs/heads/main/modules"
+BASE_URL="https://raw.githubusercontent.com/walllal/bash/refs/heads/main"
 
 function print_line() { echo -e "${BLUE}-------------------------------------------------------------${PLAIN}"; }
 function info()    { echo -e "${BLUE}[INFO]${PLAIN}  $1"; }
