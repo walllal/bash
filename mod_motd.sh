@@ -14,28 +14,45 @@ echo -e "功能说明：SSH 登录后自动显示精美的系统状态信息"
 echo -e "展示内容：系统信息、CPU/内存/磁盘、负载、网络、安全状态"
 echo ""
 
-info "正在禁用系统默认 MOTD 组件..."
+info "正在禁用系统默认 MOTD 组件（仅禁用不必要的动态脚本，保留 PAM 调用）..."
+
 MOTD_DIR="/etc/update-motd.d"
 if [[ -d "$MOTD_DIR" ]]; then
-    for f in "$MOTD_DIR"/*; do
-        [[ -f "$f" ]] && chmod -x "$f" 2>/dev/null && info "已禁用: $(basename $f)"
-    done
+    # 备份原有脚本（可选）
+    if [[ ! -d "$MOTD_DIR.bak" ]]; then
+        cp -r "$MOTD_DIR" "$MOTD_DIR.bak"
+        info "已备份原始 MOTD 脚本到 $MOTD_DIR.bak"
+    fi
+    # 删除或禁用所有原有脚本（避免重复输出）
+    rm -f "$MOTD_DIR"/* 2>/dev/null
+    # 或者 chmod -x 全部原有脚本，但确保目录为空
+    # 确保目录存在
+    mkdir -p "$MOTD_DIR"
 fi
 
-if [[ -f /etc/motd ]]; then
-    cp /etc/motd /etc/motd.bak
-    > /etc/motd
-fi
+# 确保 PAM 中 pam_motd.so 没有被注释
+# 检查 /etc/pam.d/sshd 和 /etc/pam.d/login
+for pamfile in /etc/pam.d/sshd /etc/pam.d/login; do
+    if [[ -f "$pamfile" ]]; then
+        # 取消注释包含 pam_motd.so 的行
+        sed -i 's/^#\s*\(session\s\+optional\s\+pam_motd.so\)/\1/' "$pamfile"
+        # 确保存在该行，如果没有则添加
+        if ! grep -q "pam_motd.so" "$pamfile"; then
+            echo "session optional pam_motd.so motd=/run/motd.dynamic" >> "$pamfile"
+        fi
+    fi
+done
 
-sed -i 's/^session\s*optional\s*pam_motd.so.*/#&/' /etc/pam.d/sshd 2>/dev/null || true
-sed -i 's/^session\s*optional\s*pam_motd.so.*/#&/' /etc/pam.d/login 2>/dev/null || true
+# 清空静态 /etc/motd (防止旧的静态内容)
+> /etc/motd
 
 info "正在安装依赖工具 (figlet)..."
 apt install -y figlet bc 2>/dev/null || true
 
-MOTD_SCRIPT="$MOTD_DIR/00-custom-info"
+# 创建自定义 MOTD 脚本
+CUSTOM_SCRIPT="$MOTD_DIR/00-custom-info"
 
-cat > "$MOTD_SCRIPT" << 'MOTD_EOF'
+cat > "$CUSTOM_SCRIPT" << 'MOTD_EOF'
 #!/bin/bash
 # ==============================================================
 #  Custom MOTD - Server Info Display
@@ -180,27 +197,40 @@ echo -e "${B}  ═════════════════════�
 echo -e ""
 MOTD_EOF
 
-chmod +x "$MOTD_SCRIPT"
+chmod +x "$CUSTOM_SCRIPT"
 
+# 确保 sshd 配置中的 PrintMotd yes
 if grep -qE "^#?PrintMotd" /etc/ssh/sshd_config; then
     sed -i 's/^#\?PrintMotd.*/PrintMotd yes/' /etc/ssh/sshd_config
 else
     echo "PrintMotd yes" >> /etc/ssh/sshd_config
 fi
+
+# 确保 PrintLastLog 为 no（可选，避免重复）
 if grep -qE "^#?PrintLastLog" /etc/ssh/sshd_config; then
     sed -i 's/^#\?PrintLastLog.*/PrintLastLog no/' /etc/ssh/sshd_config
 else
     echo "PrintLastLog no" >> /etc/ssh/sshd_config
 fi
 
-sshd -t 2>/dev/null && systemctl restart sshd
+# 重新加载 sshd
+if sshd -t 2>/dev/null; then
+    systemctl restart sshd
+    success "SSH 服务已重启"
+else
+    error "SSH 配置语法错误，请检查"
+fi
 
+# 立即预览
 echo ""
 read -rp "是否立即预览 MOTD 效果? (y/n): " preview
-[[ "$preview" == "y" ]] && echo "" && bash "$MOTD_SCRIPT"
+if [[ "$preview" == "y" ]]; then
+    echo ""
+    bash "$CUSTOM_SCRIPT"
+fi
 
 success "MOTD 美化配置完成"
-echo -e "  MOTD脚本路径: ${CYAN}$MOTD_SCRIPT${PLAIN}"
-echo -e "  修改MOTD:     ${YELLOW}nano $MOTD_SCRIPT${PLAIN}"
-echo -e "  立即预览:     ${YELLOW}bash $MOTD_SCRIPT${PLAIN}"
-echo -e "  恢复默认:     ${YELLOW}chmod +x /etc/update-motd.d/*${PLAIN}"
+echo -e "  MOTD脚本路径: ${CYAN}$CUSTOM_SCRIPT${PLAIN}"
+echo -e "  测试显示:     ${YELLOW}run-parts /etc/update-motd.d/ 2>/dev/null${PLAIN}"
+echo -e "  立即预览:     ${YELLOW}bash $CUSTOM_SCRIPT${PLAIN}"
+echo -e "  恢复默认:     ${YELLOW}rm -rf /etc/update-motd.d/* && cp -r /etc/update-motd.d.bak/* /etc/update-motd.d/ && systemctl restart sshd${PLAIN}"
