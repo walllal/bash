@@ -83,17 +83,14 @@ function task_bbr()          { bash <(curl -sL "${BASE_URL}/mod_bbr.sh"); }
 function task_swap()         { bash <(curl -sL "${BASE_URL}/swap.sh"); }
 function task_hostname()     { bash <(curl -sL "${BASE_URL}/mod_hostname.sh"); }
 function task_sysctl()       { bash <(curl -sL "${BASE_URL}/mod_sysctl.sh"); }
+function task_mount()        { bash <(curl -sL "${BASE_URL}/mod_mount.sh"); }
 function task_docker()       { bash <(curl -sL "${BASE_URL}/mod_docker.sh"); }
 function task_1panel()       { bash <(curl -sL "${BASE_URL}/mod_1panel.sh"); }
 function task_create_user()  { bash <(curl -sL "${BASE_URL}/mod_user.sh"); }
 function task_ssh()          { bash <(curl -sL "${BASE_URL}/mod_ssh.sh"); }
 function task_ssh_port()     { bash <(curl -sL "${BASE_URL}/mod_ssh_port.sh"); }
 function task_ssh_notify()   { bash <(curl -sL "${BASE_URL}/mod_ssh_notify.sh"); }
-function task_firewall()     { bash <(curl -sL "${BASE_URL}/mod_firewall.sh"); }
-function task_rkhunter()     { bash <(curl -sL "${BASE_URL}/mod_rkhunter.sh"); }
-function task_auto_updates() { bash <(curl -sL "${BASE_URL}/mod_autoupdate.sh"); }
 function task_motd()         { bash <(curl -sL "${BASE_URL}/mod_motd.sh"); }
-function task_zsh()          { bash <(curl -sL "${BASE_URL}/mod_zsh.sh"); }
 
 # ==============================================================
 #  主菜单
@@ -115,23 +112,20 @@ function show_menu() {
         echo -e "   ${GREEN}5.${PLAIN}   配置 Swap 交换空间"
         echo -e "   ${GREEN}6.${PLAIN}   配置主机名"
         echo -e "   ${GREEN}7.${PLAIN}   内核网络参数优化"
+        echo -e "   ${GREEN}8.${PLAIN}   磁盘挂载"
         echo -e ""
         echo -e " ${CYAN}[ 软件应用 ]${PLAIN}"
-        echo -e "   ${GREEN}8.${PLAIN}   安装 Docker"
-        echo -e "   ${GREEN}9.${PLAIN}   安装 1Panel 面板"
+        echo -e "   ${GREEN}9.${PLAIN}   安装 Docker"
+        echo -e "   ${GREEN}10.${PLAIN}  安装 1Panel 面板"
         echo -e ""
         echo -e " ${CYAN}[ 安全加固 ]${PLAIN}"
-        echo -e "   ${GREEN}10.${PLAIN}  创建普通用户 ${CYAN}(sudo权限 + SSH同步)${PLAIN}"
-        echo -e "   ${GREEN}11.${PLAIN}  配置 SSH 密钥登录 ${RED}(禁密码)${PLAIN}"
-        echo -e "   ${GREEN}12.${PLAIN}  修改 SSH 端口 ${CYAN}(联动UFW/Fail2Ban)${PLAIN}"
-        echo -e "   ${GREEN}13.${PLAIN}  SSH 登录 Telegram 通知"
-        echo -e "   ${GREEN}14.${PLAIN}  防火墙与入侵防御 ${YELLOW}(UFW & Fail2Ban)${PLAIN}"
-        echo -e "   ${GREEN}15.${PLAIN}  Rootkit 检测工具 ${CYAN}(rkhunter)${PLAIN}"
-        echo -e "   ${GREEN}16.${PLAIN}  配置自动安全更新"
+        echo -e "   ${GREEN}11.${PLAIN}  创建普通用户 ${CYAN}(sudo权限 + SSH同步)${PLAIN}"
+        echo -e "   ${GREEN}12.${PLAIN}  配置 SSH 密钥登录 ${RED}(禁密码)${PLAIN}"
+        echo -e "   ${GREEN}13.${PLAIN}  修改 SSH 端口 ${CYAN}(联动UFW/Fail2Ban)${PLAIN}"
+        echo -e "   ${GREEN}14.${PLAIN}  SSH 登录 Telegram 通知"
         echo -e ""
         echo -e " ${CYAN}[ 体验优化 ]${PLAIN}"
-        echo -e "   ${GREEN}17.${PLAIN}  MOTD 系统信息美化"
-        echo -e "   ${GREEN}18.${PLAIN}  ZSH + 插件环境 ${CYAN}(Oh-My-Zsh / 补全 / 高亮)${PLAIN}"
+        echo -e "   ${GREEN}15.${PLAIN}  MOTD 系统信息美化"
         echo -e ""
         echo -e "${BLUE}-------------------------------------------------------------${PLAIN}"
         echo -e "   ${GREEN}q.${PLAIN}   退出脚本"
@@ -149,17 +143,14 @@ function show_menu() {
             5)   task_swap ;;
             6)   task_hostname ;;
             7)   task_sysctl ;;
-            8)   task_docker ;;
-            9)   task_1panel ;;
-            10)  task_create_user ;;
-            11)  task_ssh ;;
-            12)  task_ssh_port ;;
-            13)  task_ssh_notify ;;
-            14)  task_firewall ;;
-            15)  task_rkhunter ;;
-            16)  task_auto_updates ;;
-            17)  task_motd ;;
-            18)  task_zsh ;;
+            8)   task_mount ;;
+            9)   task_docker ;;
+            10)  task_1panel ;;
+            11)  task_create_user ;;
+            12)  task_ssh ;;
+            13)  task_ssh_port ;;
+            14)  task_ssh_notify ;;
+            15)  task_motd ;;
             q|Q) success "已退出脚本"; exit 0 ;;
             *)   error "无效输入: '$choice'，请重新选择" ;;
         esac
