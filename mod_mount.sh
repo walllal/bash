@@ -17,8 +17,28 @@ echo -e ""
 lsblk -o NAME,SIZE,TYPE,MOUNTPOINT
 echo -e ""
 
+# --- 检测未挂载、可挂载的磁盘 ---
+echo -e "${CYAN}可挂载磁盘（未挂载）：${PLAIN}"
+AVAILABLE=()
+# 列出所有物理磁盘（不含分区），逐块检查挂载状态
+for disk in $(lsblk -dno NAME,TYPE 2>/dev/null | awk '$2=="disk"{print $1}'); do
+    # 检查该磁盘（含子分区）是否已有挂载点
+    if [[ -z "$(lsblk -n -o MOUNTPOINT /dev/$disk 2>/dev/null | tr -d '[:space:]')" ]]; then
+        dsize=$(lsblk -dno SIZE /dev/$disk 2>/dev/null)
+        echo -e "  ${GREEN}/dev/$disk${PLAIN}  (${dsize})  → 可挂载"
+        AVAILABLE+=("/dev/$disk")
+    fi
+done
+
+if [[ ${#AVAILABLE[@]} -eq 0 ]]; then
+    warn "未检测到可挂载的磁盘"
+    exit 0
+fi
+echo -e ""
+
 # --- 选择目标磁盘 ---
-echo -e "请选择要挂载的磁盘 (如 /dev/vdb)，或输入 q 退出："
+echo -e "请选择要挂载的磁盘，或输入 q 退出："
+echo -e "  ${GREEN}可选: ${AVAILABLE[*]}${PLAIN}"
 read -rp "磁盘设备: " DISK
 
 if [[ "$DISK" == "q" || "$DISK" == "Q" ]]; then
